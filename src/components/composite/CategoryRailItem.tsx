@@ -31,6 +31,7 @@ export function CategoryRailItem({ name, active, onPress }: CategoryRailItemProp
 
 const styles = StyleSheet.create({
   item: {
+    width: 74,
     paddingVertical: 10,
     paddingHorizontal: 6,
     alignItems: 'center',
