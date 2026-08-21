@@ -1,18 +1,39 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { useEffect } from 'react';
+import { Stack } from 'expo-router';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
-
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import {
+  useFonts,
+  DMSans_400Regular,
+  DMSans_500Medium,
+  DMSans_600SemiBold,
+  DMSans_700Bold,
+} from '@expo-google-fonts/dm-sans';
+import { AppStateProvider } from '@/state/AppStateContext';
 
 SplashScreen.preventAutoHideAsync();
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    DMSans_400Regular,
+    DMSans_500Medium,
+    DMSans_600SemiBold,
+    DMSans_700Bold,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync();
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) return null;
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <AppStateProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+        </Stack>
+      </AppStateProvider>
+    </SafeAreaProvider>
   );
 }
