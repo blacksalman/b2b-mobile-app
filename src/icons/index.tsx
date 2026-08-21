@@ -143,3 +143,90 @@ export function MicIcon({ size = 24, color = '#fff' }: IconProps) {
     </Svg>
   );
 }
+
+// Rating pill chevron (Product screen's rating pill → Reviews, line 867) — a plain arrowhead, distinct
+// from ArrowRightIcon's shaft+arrowhead glyph.
+export function ChevronRightIcon({ size = 8, color = '#6B6B6B' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 5l7 7-7 7" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// Product Description "Read More" chevron (line 1011) — rotated 180° via style when expanded.
+export function ChevronDownIcon({ size = 12, color = '#25A567' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M6 9l6 6 6-6" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// 5-point rating star — filled (rating displays, review list) or outline-with-gold-stroke (the
+// write-a-review star picker, line 1224: `fill="{{ rs.fill }}" stroke="#F5B942" stroke-width="1"`).
+export function StarIcon({ size = 12, fill = '#F5B942', stroke }: { size?: number; fill?: string; stroke?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={fill}>
+      <Path
+        d="M12 2l3.1 6.6 7.2.9-5.3 5 1.4 7.2L12 18l-6.4 3.7 1.4-7.2-5.3-5 7.2-.9z"
+        stroke={stroke}
+        strokeWidth={stroke ? 1 : 0}
+      />
+    </Svg>
+  );
+}
+
+// Cart line remove button (line 1275).
+export function TrashIcon({ size = 18, color = '#E15C6D' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-8 0 1 12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-12"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+// Checkout's "Delivery Address" section icon (line 1347).
+export function LocationPinIcon({ size = 16, color = '#25A567' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 21s-7-6.1-7-11.4A7 7 0 0 1 19 9.6C19 14.9 12 21 12 21z" stroke={color} strokeWidth={1.7} strokeLinejoin="round" />
+      <Circle cx={12} cy={9.6} r={2.4} stroke={color} strokeWidth={1.7} />
+    </Svg>
+  );
+}
+
+// Checkout's "Shipping" section icon (line 1358).
+export function ShippingBoxIcon({ size = 16, color = '#25A567' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 6h10v9H3V6zm10 3h4l3 3v3h-7V9z" stroke={color} strokeWidth={1.7} strokeLinejoin="round" />
+      <Circle cx={7} cy={18} r={1.7} stroke={color} strokeWidth={1.5} />
+      <Circle cx={17} cy={18} r={1.7} stroke={color} strokeWidth={1.5} />
+    </Svg>
+  );
+}
+
+// Checkout's "Order Summary" section icon (line 1367).
+export function ReceiptIcon({ size = 16, color = '#25A567' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M6 3h12v17l-6-3-6 3V3z" stroke={color} strokeWidth={1.7} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// Brand-video placeholder play button (line 1155) — solid triangle, no stroke.
+export function PlayIcon({ size = 15, color = '#fff' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <Path d="M6 4l14 8-14 8V4z" />
+    </Svg>
+  );
+}

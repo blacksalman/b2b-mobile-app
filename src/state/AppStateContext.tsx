@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import type { CartState } from '@/data/types';
 import type { FilterTabName } from '@/data/categories-content';
+import { computeCartTotals, type CartTotals } from '@/data/cartTotals';
 
 export type FilterMultiKind = 'avail' | 'brand' | 'ing' | 'concern' | 'form';
 
@@ -54,6 +55,7 @@ type Action =
   | { type: 'ADD_TO_CART'; id: number; qty: number }
   | { type: 'INC'; id: number }
   | { type: 'DEC'; id: number }
+  | { type: 'REMOVE_FROM_CART'; id: number }
   | { type: 'SET_LOGGED_IN'; value: boolean }
   | { type: 'SHOW_TOAST'; message: string }
   | { type: 'HIDE_TOAST' }
@@ -76,6 +78,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, cart: { ...state.cart, [action.id]: (state.cart[action.id] || 0) + 1 } };
     case 'DEC':
       return { ...state, cart: { ...state.cart, [action.id]: Math.max(0, (state.cart[action.id] || 0) - 1) } };
+    case 'REMOVE_FROM_CART':
+      return { ...state, cart: { ...state.cart, [action.id]: 0 } };
     case 'SET_LOGGED_IN':
       return { ...state, loggedIn: action.value };
     case 'SHOW_TOAST':
@@ -109,9 +113,11 @@ interface AppStateContextValue extends AppState {
   addToCart: (id: number, qty: number) => void;
   inc: (id: number) => void;
   dec: (id: number) => void;
+  removeFromCart: (id: number) => void;
   setLoggedIn: (value: boolean) => void;
   flash: (message: string) => void;
   cartCases: number;
+  cartTotals: CartTotals;
   setFilterOpen: (value: boolean) => void;
   setFilterTab: (tab: FilterTabName) => void;
   setFilterSort: (value: string) => void;
@@ -145,6 +151,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const addToCart = useCallback((id: number, qty: number) => dispatch({ type: 'ADD_TO_CART', id, qty }), []);
   const inc = useCallback((id: number) => dispatch({ type: 'INC', id }), []);
   const dec = useCallback((id: number) => dispatch({ type: 'DEC', id }), []);
+  const removeFromCart = useCallback((id: number) => dispatch({ type: 'REMOVE_FROM_CART', id }), []);
   const setLoggedIn = useCallback((value: boolean) => dispatch({ type: 'SET_LOGGED_IN', value }), []);
 
   const setFilterOpen = useCallback((value: boolean) => dispatch({ type: 'SET_FILTER_OPEN', value }), []);
@@ -161,6 +168,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     () => Object.values(state.cart).reduce((a, b) => a + b, 0),
     [state.cart],
   );
+
+  const cartTotals = useMemo(() => computeCartTotals(state.cart), [state.cart]);
 
   // Ported verbatim from the source's `hasActiveFilters`/`activeFilterPills` (lines 1566-1575) —
   // shared by both Categories and Listing screens. Removing a pill here only clears that selection;
@@ -196,9 +205,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       addToCart,
       inc,
       dec,
+      removeFromCart,
       setLoggedIn,
       flash,
       cartCases,
+      cartTotals,
       setFilterOpen,
       setFilterTab,
       setFilterSort,
@@ -213,9 +224,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       addToCart,
       inc,
       dec,
+      removeFromCart,
       setLoggedIn,
       flash,
       cartCases,
+      cartTotals,
       setFilterOpen,
       setFilterTab,
       setFilterSort,
