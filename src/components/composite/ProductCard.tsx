@@ -54,10 +54,10 @@ type ProductCardProps = RailProps | GridProps;
 
 const RATING_STAR_COLOR = colors.starYellow;
 
-export function ProductCard(props: ProductCardProps) {
+export const ProductCard = React.memo(function ProductCard(props: ProductCardProps) {
   if (props.variant === 'rail') return <RailCard {...props} />;
   return <GridCard {...props} />;
-}
+});
 
 function RatingChip({ rating }: { rating: string }) {
   return (

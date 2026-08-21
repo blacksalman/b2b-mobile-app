@@ -16,9 +16,11 @@ const TABS = [
 // 22x22 bordered-square "icon" swatch (no per-tab icon art in the source — just border/fill color
 // change on active state) + label. Active = brand green, inactive = body gray. Cart tab shows an
 // orange badge with the total case count when non-empty. Per the plan's architecture note, this bar
-// must stay visible on every screen (all 13 source screens have no showHeader-style guard on it), so
-// it's rendered once in `(tabs)/_layout.tsx` alongside a plain <Slot/> rather than via a navigator
-// that could hide it on pushed screens.
+// must stay visible on every screen (no source screen has a showHeader-style guard on it), so it's
+// rendered as the `tabBar` prop of a real `<Tabs/>` navigator in `(tabs)/_layout.tsx` — every
+// registered screen shows this same bar, not just the 4 it has buttons for. `router.push()` here
+// still works correctly (doesn't push stack history) because expo-router downgrades PUSH to NAVIGATE
+// automatically for any non-stack navigator target — see `(tabs)/_layout.tsx`'s comment for the trace.
 export function TabBar() {
   const router = useRouter();
   const pathname = usePathname();

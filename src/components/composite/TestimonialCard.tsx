@@ -23,7 +23,7 @@ type TestimonialCardProps = DoctorTestimonialProps | BuyerTestimonialProps;
 
 // Ported verbatim from "Doctor's Talk" (line 470, quote-mark icon) and "What buyers say" (line 490,
 // 5-star row) — two near-identical card shapes sharing the same underlying pattern.
-export function TestimonialCard(props: TestimonialCardProps) {
+export const TestimonialCard = React.memo(function TestimonialCard(props: TestimonialCardProps) {
   if (props.kind === 'doctor') {
     return (
       <View style={styles.doctorCard}>
@@ -61,7 +61,7 @@ export function TestimonialCard(props: TestimonialCardProps) {
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   doctorCard: {

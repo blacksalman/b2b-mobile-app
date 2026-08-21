@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fontFamily } from '@/theme';
 import { CloseIcon } from '@/icons';
 import { CheckRow } from '@/components/primitives/CheckRow';
@@ -52,6 +53,7 @@ export function FilterSheet({
   onToggleMulti,
   onClear,
 }: FilterSheetProps) {
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose} />
@@ -114,7 +116,7 @@ export function FilterSheet({
           </ScrollView>
         </View>
 
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
           <Pressable onPress={onClear} style={[styles.footerButton, { backgroundColor: colors.cardBg }]}>
             <Text style={[styles.footerButtonText, { color: colors.charcoal }]}>Clear filters</Text>
           </Pressable>

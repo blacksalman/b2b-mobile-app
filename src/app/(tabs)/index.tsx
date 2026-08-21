@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors, fontFamily } from '@/theme';
@@ -36,11 +36,11 @@ export default function HomeScreen() {
   const router = useRouter();
   const { cart, loggedIn, addToCart, inc, dec, flash } = useAppState();
 
-  const buyAgain = getBuyAgain(cart, loggedIn);
-  const bestSellers = getBestSellers(cart, loggedIn);
-  const newArrivals = getNewArrivals(cart, loggedIn);
-  const featured = getFeatured(cart, loggedIn);
-  const concerns = getConcerns(cart, loggedIn);
+  const buyAgain = useMemo(() => getBuyAgain(cart, loggedIn), [cart, loggedIn]);
+  const bestSellers = useMemo(() => getBestSellers(cart, loggedIn), [cart, loggedIn]);
+  const newArrivals = useMemo(() => getNewArrivals(cart, loggedIn), [cart, loggedIn]);
+  const featured = useMemo(() => getFeatured(cart, loggedIn), [cart, loggedIn]);
+  const concerns = useMemo(() => getConcerns(cart, loggedIn), [cart, loggedIn]);
 
   const openProduct = (id: number) => router.push(`/product/${id}`);
   const addProduct = (id: number) => {

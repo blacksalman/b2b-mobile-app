@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fontFamily } from '@/theme';
 import { CloseIcon, FilterIcon, SearchIcon, SmallBackChevronIcon } from '@/icons';
 import { ProductCard } from '@/components/composite/ProductCard';
@@ -21,6 +22,7 @@ function addFlashLabel(name: string): string {
 // Best sellers/New arrivals/Featured "View all" links alike.
 export default function ListingScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ ids: string; title: string; tagline: string; tint: string }>();
   const {
     cart,
@@ -68,7 +70,7 @@ export default function ListingScreen() {
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={[styles.hero, { backgroundColor: tint }]}>
-          <Pressable onPress={goBack} style={styles.backButton}>
+          <Pressable onPress={goBack} style={[styles.backButton, { top: insets.top + 12 }]}>
             <SmallBackChevronIcon size={9} />
           </Pressable>
           <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,.5)']} style={styles.heroScrim}>
@@ -156,7 +158,6 @@ const styles = StyleSheet.create({
   hero: { height: 230, position: 'relative', justifyContent: 'flex-end', overflow: 'hidden' },
   backButton: {
     position: 'absolute',
-    top: 54,
     left: 14,
     width: 38,
     height: 38,

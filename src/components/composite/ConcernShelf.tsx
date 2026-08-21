@@ -19,7 +19,7 @@ interface ConcernShelfProps {
 // Ported verbatim from the Home concern shelves (line 404) — 4 of these repeat with their own tint,
 // tags and product set. Products render with no top-left badge and no showPrice/gated split (the
 // source shows price + buttons unconditionally here), reproduced via ProductCard's "standard" mode.
-export function ConcernShelf({ concern, onView, onOpenProduct, onAdd, onInc, onDec, onGoCart, onLogin }: ConcernShelfProps) {
+export const ConcernShelf = React.memo(function ConcernShelf({ concern, onView, onOpenProduct, onAdd, onInc, onDec, onGoCart, onLogin }: ConcernShelfProps) {
   return (
     <View style={[styles.panel, { backgroundColor: concern.tint }]}>
       <View style={styles.headerRow}>
@@ -65,7 +65,7 @@ export function ConcernShelf({ concern, onView, onOpenProduct, onAdd, onInc, onD
       </ScrollView>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   panel: {

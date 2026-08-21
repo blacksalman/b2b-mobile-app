@@ -19,7 +19,7 @@ interface BrandCardProps {
 }
 
 // Ported verbatim from the Home "Brands to know" card (line 196).
-export function BrandCard({ name, short, initials, line, rating, reviews, blurb, usps, metaLine, skus, tint, onShop }: BrandCardProps) {
+export const BrandCard = React.memo(function BrandCard({ name, short, initials, line, rating, reviews, blurb, usps, metaLine, skus, tint, onShop }: BrandCardProps) {
   return (
     <View style={styles.card}>
       <View style={[styles.photoBand, { backgroundColor: tint }]}>
@@ -69,7 +69,7 @@ export function BrandCard({ name, short, initials, line, rating, reviews, blurb,
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

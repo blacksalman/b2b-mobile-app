@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fontFamily } from '@/theme';
 import { CartIcon, CloseIcon } from '@/icons';
 import { money } from '@/utils/money';
@@ -49,6 +50,7 @@ interface VariantSheetProps {
 // the MAIN product's cart quantity by the pack's `mult` (so the "Bulk carton ×6" pack adds 6 to the
 // main product's cart count per tap, and "Trial pack" adds 0.4) — two independent numbers, not one.
 export function VariantSheet({ visible, product, variantCart, onClose, onAdd, onInc, onDec, onGoCart }: VariantSheetProps) {
+  const insets = useSafeAreaInsets();
   if (!product) return null;
   const packs = buildVariantPacks(product);
 
@@ -66,7 +68,7 @@ export function VariantSheet({ visible, product, variantCart, onClose, onAdd, on
           </Pressable>
         </View>
 
-        <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+        <ScrollView style={styles.body} contentContainerStyle={[styles.bodyContent, { paddingBottom: 14 + insets.bottom }]}>
           {packs.map((pack) => {
             const qty = variantCart[pack.key] || 0;
             const inCart = qty > 0;
