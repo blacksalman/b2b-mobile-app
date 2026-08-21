@@ -3,11 +3,12 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fontFamily } from '@/theme';
-import { CloseIcon, FilterIcon, SearchIcon } from '@/icons';
+import { CloseIcon, FilterIcon, SearchIcon, SmallBackChevronIcon } from '@/icons';
 import { CategoryRailItem } from '@/components/composite/CategoryRailItem';
 import { ProductCard } from '@/components/composite/ProductCard';
-import { FilterSheet, type FilterSelections } from '@/components/shell/FilterSheet';
-import { catBanner, getCatProducts, type FilterTabName } from '@/data/categories-content';
+import { FilterSheet } from '@/components/shell/FilterSheet';
+import { VariantSheet, type VariantPack } from '@/components/shell/VariantSheet';
+import { catBanner, getCatProducts } from '@/data/categories-content';
 import { categories } from '@/data/categories';
 import { useAppState } from '@/state/AppStateContext';
 import { productById } from '@/data/products';
@@ -16,46 +17,40 @@ function addFlashLabel(name: string): string {
   return name.split(' ').slice(0, 2).join(' ') + ' added';
 }
 
-const DEFAULT_SELECTIONS: FilterSelections = { sort: 'Popular', price: '', avail: [], brand: [], ing: [], concern: [], form: [] };
-
 export default function CategoriesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { cart, loggedIn, addToCart, inc, dec, flash } = useAppState();
+  const {
+    cart,
+    loggedIn,
+    addToCart,
+    inc,
+    dec,
+    flash,
+    filters,
+    filterOpen,
+    filterTab,
+    setFilterOpen,
+    setFilterTab,
+    setFilterSort,
+    setFilterPrice,
+    toggleFilterMulti,
+    clearFilters,
+    hasActiveFilters,
+    activeFilterPills,
+  } = useAppState();
 
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState(categories[0].name);
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [filterTab, setFilterTab] = useState<FilterTabName>('Brand');
-  const [selections, setSelections] = useState<FilterSelections>(DEFAULT_SELECTIONS);
+
+  // Variant-pack sheet (source line 1142) — only reachable from the single product with
+  // `selectOption` true (catalog index 1, Ashwagandha Capsules). `variantCart` is the source's own
+  // separate per-variant counter (`s.variantCart`), independent of the main cart quantity.
+  const [variantProductId, setVariantProductId] = useState<number | null>(null);
+  const [variantCart, setVariantCart] = useState<Record<string, number>>({});
 
   const catProducts = useMemo(() => getCatProducts(cart, loggedIn, query), [cart, loggedIn, query]);
-
-  const hasActiveFilters =
-    selections.sort !== 'Popular' ||
-    !!selections.price ||
-    selections.avail.length > 0 ||
-    selections.brand.length > 0 ||
-    selections.ing.length > 0 ||
-    selections.concern.length > 0 ||
-    selections.form.length > 0;
-
-  const activePills: { key: string; label: string; remove: () => void }[] = [
-    ...(selections.sort !== 'Popular' ? [{ key: 'sort', label: selections.sort, remove: () => setSelections((s) => ({ ...s, sort: 'Popular' })) }] : []),
-    ...(selections.price ? [{ key: 'price', label: selections.price, remove: () => setSelections((s) => ({ ...s, price: '' })) }] : []),
-    ...selections.avail.map((v) => ({ key: `avail-${v}`, label: v, remove: () => toggleMulti('avail', v) })),
-    ...selections.brand.map((v) => ({ key: `brand-${v}`, label: v, remove: () => toggleMulti('brand', v) })),
-    ...selections.ing.map((v) => ({ key: `ing-${v}`, label: v, remove: () => toggleMulti('ing', v) })),
-    ...selections.concern.map((v) => ({ key: `concern-${v}`, label: v, remove: () => toggleMulti('concern', v) })),
-    ...selections.form.map((v) => ({ key: `form-${v}`, label: v, remove: () => toggleMulti('form', v) })),
-  ];
-
-  function toggleMulti(kind: 'avail' | 'brand' | 'ing' | 'concern' | 'form', value: string) {
-    setSelections((s) => ({
-      ...s,
-      [kind]: s[kind].includes(value) ? s[kind].filter((x) => x !== value) : [...s[kind], value],
-    }));
-  }
+  const variantProduct = variantProductId != null ? productById(variantProductId) ?? null : null;
 
   const openProduct = (id: number) => router.push(`/product/${id}`);
   const addProduct = (id: number) => {
@@ -65,10 +60,37 @@ export default function CategoriesScreen() {
   };
   const goCart = () => router.push('/cart');
   const goLogin = () => router.push('/account');
+  const goHome = () => router.push('/');
+
+  const openVariant = (id: number) => setVariantProductId(id);
+  const closeVariant = () => setVariantProductId(null);
+
+  // Ported verbatim from `variantPacks`' add/inc/dec (source line 1587-1589): every tap ALSO nudges
+  // the main product's cart quantity by the pack's `mult`, independent of the small per-pack counter
+  // shown in this sheet. See VariantSheet's own comment for why that's intentional, not a bug to fix.
+  const addVariant = (pack: VariantPack) => {
+    if (!variantProduct) return;
+    addToCart(variantProduct.id, pack.mult);
+    setVariantCart((s) => ({ ...s, [pack.key]: 1 }));
+    flash(pack.label + ' added');
+  };
+  const incVariant = (pack: VariantPack) => {
+    if (!variantProduct) return;
+    addToCart(variantProduct.id, pack.mult);
+    setVariantCart((s) => ({ ...s, [pack.key]: (s[pack.key] || 0) + 1 }));
+  };
+  const decVariant = (pack: VariantPack) => {
+    if (!variantProduct) return;
+    addToCart(variantProduct.id, -pack.mult);
+    setVariantCart((s) => ({ ...s, [pack.key]: Math.max(0, (s[pack.key] || 0) - 1) }));
+  };
 
   return (
     <View style={styles.screen}>
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+        <Pressable onPress={goHome} style={styles.backButton}>
+          <SmallBackChevronIcon size={9} />
+        </Pressable>
         <View style={styles.searchInput}>
           <SearchIcon size={17} color={colors.bodyGray} />
           <TextInput
@@ -101,7 +123,7 @@ export default function CategoriesScreen() {
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
           {hasActiveFilters && !query && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillsRow} contentContainerStyle={styles.pillsRowContent}>
-              {activePills.map((pill) => (
+              {activeFilterPills.map((pill) => (
                 <View key={pill.key} style={styles.pill}>
                   <Text style={styles.pillText}>{pill.label}</Text>
                   <Pressable onPress={pill.remove} style={styles.pillRemove} hitSlop={6}>
@@ -109,7 +131,7 @@ export default function CategoriesScreen() {
                   </Pressable>
                 </View>
               ))}
-              <Pressable onPress={() => setSelections(DEFAULT_SELECTIONS)} hitSlop={8}>
+              <Pressable onPress={clearFilters} hitSlop={8}>
                 <Text style={styles.clearAll}>Clear all</Text>
               </Pressable>
             </ScrollView>
@@ -137,6 +159,7 @@ export default function CategoriesScreen() {
                 onDec={() => dec(p.id)}
                 onGoCart={goCart}
                 onLogin={goLogin}
+                onSelectOption={() => openVariant(p.id)}
               />
             ))}
           </View>
@@ -148,11 +171,22 @@ export default function CategoriesScreen() {
         onClose={() => setFilterOpen(false)}
         activeTab={filterTab}
         onTabChange={setFilterTab}
-        selections={selections}
-        onToggleSort={(value) => setSelections((s) => ({ ...s, sort: value }))}
-        onTogglePrice={(value) => setSelections((s) => ({ ...s, price: s.price === value ? '' : value }))}
-        onToggleMulti={toggleMulti}
-        onClear={() => setSelections(DEFAULT_SELECTIONS)}
+        selections={filters}
+        onToggleSort={setFilterSort}
+        onTogglePrice={setFilterPrice}
+        onToggleMulti={toggleFilterMulti}
+        onClear={clearFilters}
+      />
+
+      <VariantSheet
+        visible={variantProductId != null}
+        product={variantProduct}
+        variantCart={variantCart}
+        onClose={closeVariant}
+        onAdd={addVariant}
+        onInc={incVariant}
+        onDec={decVariant}
+        onGoCart={goCart}
       />
     </View>
   );
@@ -169,6 +203,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 9,
   },
+  backButton: { flexShrink: 0, width: 44, height: 44, borderRadius: 14, borderWidth: 1.4, borderColor: colors.borderGray, alignItems: 'center', justifyContent: 'center' },
   searchInput: {
     flex: 1,
     flexDirection: 'row',

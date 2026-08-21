@@ -11,6 +11,9 @@ import { TestimonialCard } from '@/components/composite/TestimonialCard';
 import { ArrowRightIcon, CheckIcon, TrendUpIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import {
+  BEST_SELLERS_LISTING_IDS,
+  FEATURED_LISTING_IDS,
+  NEW_ARRIVALS_LISTING_IDS,
   brands,
   buyerReviews,
   doctorTalks,
@@ -23,7 +26,7 @@ import {
   prescriptionGroups,
   promoBanners,
 } from '@/data/home-content';
-import { productById } from '@/data/products';
+import { productById, productIdsByBrand, productIdsByCategory } from '@/data/products';
 
 function addFlashLabel(name: string): string {
   return name.split(' ').slice(0, 2).join(' ') + ' added';
@@ -47,11 +50,23 @@ export default function HomeScreen() {
   };
   const goCart = () => router.push('/cart');
   const goLogin = () => router.push('/account');
-  const goCategory = (name: string) => router.push(`/category/${encodeURIComponent(name)}`);
-  const goBrand = (name: string) => router.push(`/brand/${encodeURIComponent(name)}`);
+  const goCategories = () => router.push('/categories');
+
+  // Ported verbatim from the source's `listingIds`/`listingTitle`/`listingTagline`/`listingTint`
+  // handoff (e.g. line 1441) — every "open a Listing" nav target passes its own fixed id set plus a
+  // title/tagline/tint, carried here via expo-router params since the source's Listing screen is
+  // driven entirely by that state, not a category/brand slug.
+  const openListing = (ids: number[], title: string, tagline: string, tint: string) => {
+    router.push({ pathname: '/listing', params: { ids: ids.join(','), title, tagline, tint } });
+  };
+  const openListingByCategory = (catName: string, title: string, tagline: string, tint: string) =>
+    openListing(productIdsByCategory(catName), title, tagline, tint);
 
   const handlePromoBanner = (b: (typeof promoBanners)[number]) => {
-    if ('targetCategory' in b && b.targetCategory) return goCategory(b.targetCategory);
+    if ('targetListing' in b && b.targetListing) {
+      const t = b.targetListing;
+      return openListingByCategory(t.cat, t.title, t.tagline, t.tint);
+    }
     if ('targetScreen' in b && b.targetScreen === 'categories') return router.push('/categories');
     if ('targetScreen' in b && b.targetScreen === 'stores') return router.push('/stores');
   };
@@ -67,7 +82,7 @@ export default function HomeScreen() {
             <Text style={styles.heroEyebrow}>TRADE PRICE · CASE ORDERS</Text>
             <Text style={styles.heroTitle}>Immunity & Wellness</Text>
             <Text style={styles.heroSub}>Up to 50% off your first carton order. Next-day dispatch before 9am.</Text>
-            <Pressable onPress={() => router.push('/deals')} style={styles.heroButton}>
+            <Pressable onPress={goCategories} style={styles.heroButton}>
               <Text style={styles.heroButtonText}>Discover now</Text>
               <ArrowRightIcon size={14} />
             </Pressable>
@@ -80,7 +95,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Level Up Program — decorative/static per source, not wired to real tier logic */}
-        <Pressable onPress={() => router.push('/deals')} style={styles.levelUp}>
+        <Pressable onPress={goCategories} style={styles.levelUp}>
           <View style={styles.levelUpTop}>
             <View style={styles.levelUpBadge}>
               <View style={styles.levelUpBadgeIcon}>
@@ -124,11 +139,15 @@ export default function HomeScreen() {
           title="Prescription at a glance"
           subtitle="Curated product groups for common prescriptions"
           actionLabel="View all"
-          onAction={() => goCategory('Health supplement')}
+          onAction={goCategories}
         />
         <View style={styles.prescriptionGrid}>
           {prescriptionGroups.map((g) => (
-            <Pressable key={g.name} onPress={() => goCategory('Health supplement')} style={styles.prescriptionCard}>
+            <Pressable
+              key={g.name}
+              onPress={() => openListingByCategory(g.cat, g.name, `${g.count} products`, g.tint)}
+              style={styles.prescriptionCard}
+            >
               <View style={[styles.prescriptionIcon, { borderColor: g.icon }]}>
                 <Text style={[styles.prescriptionGlyph, { color: g.icon }]}>{g.glyph}</Text>
               </View>
@@ -184,8 +203,9 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Buy again */}
-        <SectionHeader title="Buy again" subtitle="Ordered at least twice in the last 90 days" actionLabel="View all" onAction={() => router.push('/wishlist')} />
+        {/* Buy again — the source removed this section's "View all" link entirely along with the
+            Wishlist screen it used to point to; no replacement target, per source. */}
+        <SectionHeader title="Buy again" subtitle="Ordered at least twice in the last 90 days" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
           {buyAgain.map((p) => (
             <ProductCard
@@ -204,16 +224,27 @@ export default function HomeScreen() {
           ))}
         </ScrollView>
 
-        {/* Brands to know */}
-        <SectionHeader title="Brands to know" subtitle="Direct trade partners, no middle margin" actionLabel="All brands" onAction={() => router.push('/categories')} />
+        {/* Brands to know — "All brands" link removed entirely per source. Each card's own "Shop X ·
+            N SKUs" button is wired to `openBrand` (brand-name filtered listing), not the dead `shop`
+            handler (category-filtered, never referenced by any onClick in the source markup). */}
+        <SectionHeader title="Brands to know" subtitle="Direct trade partners, no middle margin" />
         <View style={styles.brandsList}>
           {brands.map((b) => (
-            <BrandCard key={b.name} {...b} onShop={() => goBrand(b.name)} />
+            <BrandCard
+              key={b.name}
+              {...b}
+              onShop={() => openListing(productIdsByBrand(b.name), b.short, `Premium ${b.short} products`, b.tint)}
+            />
           ))}
         </View>
 
         {/* Best sellers */}
-        <SectionHeader title="Best sellers" subtitle="Top-moving cases across every outlet" actionLabel="View all" onAction={() => router.push('/deals')} />
+        <SectionHeader
+          title="Best sellers"
+          subtitle="Top-moving cases across every outlet"
+          actionLabel="View all"
+          onAction={() => openListing(BEST_SELLERS_LISTING_IDS, 'Best sellers', 'Top-moving cases across every outlet', colors.mintTint)}
+        />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
           {bestSellers.map((p) => (
             <ProductCard
@@ -233,7 +264,12 @@ export default function HomeScreen() {
         </ScrollView>
 
         {/* New arrivals */}
-        <SectionHeader title="New arrivals" subtitle="Added to the trade catalogue this week" actionLabel="View all" onAction={() => router.push('/categories')} />
+        <SectionHeader
+          title="New arrivals"
+          subtitle="Added to the trade catalogue this week"
+          actionLabel="View all"
+          onAction={() => openListing(NEW_ARRIVALS_LISTING_IDS, 'New arrivals', 'Added to the trade catalogue this week', colors.mintTint)}
+        />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
           {newArrivals.map((p) => (
             <ProductCard
@@ -264,7 +300,12 @@ export default function HomeScreen() {
         </ScrollView>
 
         {/* Featured products */}
-        <SectionHeader title="Featured products" subtitle="Hand-picked by your account manager." actionLabel="View all" onAction={() => router.push('/categories')} />
+        <SectionHeader
+          title="Featured products"
+          subtitle="Hand-picked by your account manager."
+          actionLabel="View all"
+          onAction={() => openListing(FEATURED_LISTING_IDS, 'Featured products', 'Hand-picked by your account manager', colors.mintTint)}
+        />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
           {featured.map((p) => (
             <ProductCard
@@ -283,12 +324,13 @@ export default function HomeScreen() {
           ))}
         </ScrollView>
 
-        {/* Concern shelves */}
+        {/* Concern shelves — "Shop the shelf" now opens a Listing scoped to the shelf's own fixed
+            product ids (source line 1466), not a plain category browse. */}
         {concerns.map((c) => (
           <ConcernShelf
             key={c.title}
             concern={c}
-            onView={() => goCategory(c.cat)}
+            onView={() => openListing(c.ids, c.title, c.blurb, c.tint)}
             onOpenProduct={openProduct}
             onAdd={addProduct}
             onInc={inc}

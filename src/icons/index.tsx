@@ -113,6 +113,17 @@ export function BackChevronIcon({ size = 20, color = '#222222' }: IconProps) {
   );
 }
 
+// Thin back chevron used on Categories' top bar (line 511-513) and the Listing hero (line 656-657) —
+// a distinct, smaller glyph from BackChevronIcon (which is the Search screen's own back arrow).
+export function SmallBackChevronIcon({ size = 9, color = '#222222' }: IconProps) {
+  const height = size * (14 / 8);
+  return (
+    <Svg width={size} height={height} viewBox="0 0 8 14" fill="none">
+      <Path d="M7 1L1 7l6 6" stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export function FilterIcon({ size = 17, color = '#222222' }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

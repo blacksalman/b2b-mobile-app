@@ -1,5 +1,5 @@
 import { products } from './products';
-import { decorateProduct, discountBadge } from './decorateProduct';
+import { decorateProduct, discountBadgeOrEmpty } from './decorateProduct';
 import type { CartState } from './types';
 import type { RailProduct } from './home-content';
 
@@ -33,7 +33,16 @@ const CAT_MARGIN = ['19%', '25%', '18%', '16%', '21%', '14%', '19%', '23%', '17%
 export interface CatProduct extends RailProduct {
   hasOffer: boolean;
   noOffer: boolean;
+  selectOption: boolean;
+  noSelectOption: boolean;
 }
+
+// Ported verbatim from catProducts (line 1601): exactly the product at array index 1 (id 2,
+// Ashwagandha Capsules) shows "Select Option" (opens the variant-pack sheet) instead of a plain
+// "Add to order" button. This flag is unique to the Categories screen's grid — the Listing screen's
+// product mapping never sets it (confirmed by reading the source directly: `listingProducts` has no
+// selectOption/openVariant fields at all).
+const SELECT_OPTION_INDEX = 1;
 
 export function getCatProducts(cart: CartState, loggedIn: boolean, query: string): CatProduct[] {
   const q = query.trim().toLowerCase();
@@ -47,7 +56,9 @@ export function getCatProducts(cart: CartState, loggedIn: boolean, query: string
         brandUpper: p.brand.toUpperCase(),
         hasOffer: !!p.cmp && !p.gated,
         noOffer: !p.cmp && !p.gated,
-        discount: discountBadge(p),
+        selectOption: i === SELECT_OPTION_INDEX,
+        noSelectOption: i !== SELECT_OPTION_INDEX,
+        discount: discountBadgeOrEmpty(p),
       };
     })
     .filter((p) => !q || (p.name + p.brand).toLowerCase().includes(q));

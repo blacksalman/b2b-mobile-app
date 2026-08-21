@@ -63,3 +63,11 @@ export function decorateProduct(
 export function discountBadge(product: Product): string {
   return product.cmp ? '-' + Math.round((1 - product.price / product.cmp) * 100) + '%' : 'trade rate';
 }
+
+// Ported verbatim from catProducts/listingProducts' own discount expression (source line 1596/1603):
+// `x.cmp?('-'+Math.round((1-x.price/x.cmp)*100)+'%'):''` — same math as discountBadge, but the
+// Categories and Listing screens use an EMPTY-STRING fallback instead of 'trade rate'. Two separate
+// helpers because the source itself uses two different fallback literals depending on screen.
+export function discountBadgeOrEmpty(product: Product): string {
+  return product.cmp ? '-' + Math.round((1 - product.price / product.cmp) * 100) + '%' : '';
+}

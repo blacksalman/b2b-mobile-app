@@ -17,3 +17,17 @@ export const products: Product[] = [
 export function productById(id: number): Product | undefined {
   return products.find((p) => p.id === id);
 }
+
+// Ported verbatim from the source's `P.filter(x=>x.cat===...)`/`P.filter(x=>x.brand===...)` id lists
+// used to build `listingIds` for the Listing screen (e.g. prescription groups, brand cards, promo
+// banners). Order is ascending product id, matching `Array.prototype.filter`'s natural order — the
+// source does NOT preserve any custom ordering passed into `listingIds`, since the actual product
+// list rendered on the Listing screen is always `P.filter(x=>s.listingIds.includes(x.id))`, which
+// iterates P (ascending id) and just tests membership.
+export function productIdsByCategory(cat: string): number[] {
+  return products.filter((p) => p.cat === cat).map((p) => p.id);
+}
+
+export function productIdsByBrand(brand: string): number[] {
+  return products.filter((p) => p.brand === brand).map((p) => p.id);
+}
