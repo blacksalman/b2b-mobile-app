@@ -31,6 +31,8 @@ export interface CartTotals {
   savePercent: string;
   shippingFee: string;
   payTotal: string;
+  volumeDiscount: string;
+  hasVolumeDiscount: boolean;
 }
 
 // Ported verbatim from renderVals() (source lines 1933-1948, 2260-2272). The tiered volume discount
@@ -74,9 +76,9 @@ export function computeCartTotals(cart: CartState): CartTotals {
     return a + (product.cmp || product.price || 12) * cart[id];
   }, 0);
   const disc = sub > 200 ? sub * 0.2 : sub > 100 ? sub * 0.1 : 0;
-  const taxAmt = sub * 0.05;
-  const grandTotal = Math.max(0, sub - disc) + taxAmt;
-  const mrpGrandTotal = mrpSub + taxAmt;
+  const taxAmt = Math.round(sub * 0.05 * 100) / 100;
+  const grandTotal = Math.round((Math.max(0, sub - disc) + taxAmt) * 100) / 100;
+  const mrpGrandTotal = Math.round((mrpSub + taxAmt) * 100) / 100;
   const cartHasDiscount = mrpGrandTotal > grandTotal + 0.01;
 
   return {
@@ -92,6 +94,8 @@ export function computeCartTotals(cart: CartState): CartTotals {
     savePercent: mrpGrandTotal > 0 ? Math.round((1 - grandTotal / mrpGrandTotal) * 100) + '%' : '0%',
     shippingFee: money(75),
     payTotal: money(grandTotal + 75),
+    volumeDiscount: money(disc),
+    hasVolumeDiscount: disc > 0.005,
   };
 }
 

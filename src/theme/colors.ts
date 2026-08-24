@@ -25,3 +25,39 @@ export function withOpacity(hex: string, alpha: number): string {
   const b = parseInt(h.substring(4, 6), 16);
   return `rgba(${r},${g},${b},${alpha})`;
 }
+
+// New AyurvedaOne design system (DESIGN-SYSTEM.md §2), pulled fresh from the live Claude Design
+// project on 2026-08-24 — a total redesign, not a restyle of `colors` above. Additive only: `colors`
+// above stays untouched so every screen not yet migrated keeps rendering exactly as it does today.
+// Only screens rebuilt against this new system (Header, TabBar, Home, Search so far) import `ds`.
+export const ds = {
+  primary: '#25A567',
+  primaryStrong: '#1E8A55',
+  primaryPress: '#176E43',
+  primarySoft: '#DCF5E9',
+  primaryInk: '#0C4733',
+
+  accent: '#B0700F',
+  accentSoft: '#FCF1E0',
+
+  ink: '#161D1A',
+  ink2: '#586360',
+  ink3: '#8C9591',
+  line: '#E3E7E5',
+  lineStrong: '#C8CFCB',
+  surface: '#FFFFFF',
+  canvas: '#F6F8F7',
+  inverse: '#0C4733',
+
+  success: '#DCF5E9',
+  successInk: '#1E8A55',
+  warning: '#FCF1E0',
+  warningInk: '#7F4F0C',
+  danger: '#FBEAE8',
+  dangerInk: '#A62520',
+  info: '#EAEFF7',
+  infoInk: '#284A70',
+  star: '#D99A28',
+
+  categoryTints: ['#DCF5E9', '#FCF1E0', '#EAEFF7', '#F7EBED', '#F0ECF7', '#EDF1EA'] as const,
+} as const;

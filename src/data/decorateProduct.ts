@@ -71,3 +71,22 @@ export function discountBadge(product: Product): string {
 export function discountBadgeOrEmpty(product: Product): string {
   return product.cmp ? '-' + Math.round((1 - product.price / product.cmp) * 100) + '%' : '';
 }
+
+// Ported verbatim from the new AyurvedaOne design system source's `marginOf(p)`/`deco(p)`
+// (Various Mobile App - Phone.dc.html line 2557/2588 & 2836). `deco()` attaches these to every
+// product card; Home's curated rails override `rating` with fixed per-index arrays afterward, but
+// never override `margin` or `reviewCount` — so these three formulas are the actual value shown
+// everywhere in the new design (Home rails' margin/reviewCount, and Search results' rating too,
+// since Search never overrides deco()'s output). Additive here since `decorateProduct` above is
+// shared with screens not yet migrated — these are new exports, not changes to existing ones.
+export function marginOf(id: number): string {
+  return 14 + ((id * 5) % 12) + '%';
+}
+
+export function ratingOf(id: number): string {
+  return (4.1 + ((id * 7) % 9) / 10).toFixed(1);
+}
+
+export function reviewCountOf(id: number): number {
+  return 12 + ((id * 17) % 88);
+}

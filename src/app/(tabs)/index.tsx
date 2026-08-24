@@ -1,14 +1,11 @@
 import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors, fontFamily } from '@/theme';
+import { ds, dsFontFamily, dsRadii, dsSpacing, dsElevation } from '@/theme';
 import { Header } from '@/components/shell/Header';
-import { SectionHeader } from '@/components/composite/SectionHeader';
-import { ProductCard } from '@/components/composite/ProductCard';
-import { BrandCard } from '@/components/composite/BrandCard';
-import { ConcernShelf } from '@/components/composite/ConcernShelf';
-import { TestimonialCard } from '@/components/composite/TestimonialCard';
-import { ArrowRightIcon, CheckIcon, TrendUpIcon } from '@/icons';
+import { DsSectionHeader } from '@/components/ds/DsSectionHeader';
+import { DsProductCard } from '@/components/ds/DsProductCard';
+import { ArrowRightIcon, MarginTrendIcon, DeliveryBoxIcon, ShieldCheckIcon, ChevronRightIcon, ConcernLeafIcon, CartIcon, TrashIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import {
   BEST_SELLERS_LISTING_IDS,
@@ -23,15 +20,27 @@ import {
   getConcerns,
   getFeatured,
   getNewArrivals,
+  heroSlides,
   prescriptionGroups,
   promoBanners,
 } from '@/data/home-content';
 import { productById, productIdsByBrand, productIdsByCategory } from '@/data/products';
+import { categories } from '@/data/categories';
 
 function addFlashLabel(name: string): string {
   return name.split(' ').slice(0, 2).join(' ') + ' added';
 }
 
+function categoryTagline(catName: string): string {
+  const cat = categories.find((c) => c.name === catName);
+  return `${cat ? cat.count : 0} SKUs · case pricing`;
+}
+
+// Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isHome
+// block, line 40-452). Every section below is in the source's exact order; sections whose content
+// is purely decorative/static in the source (the "Up to 63% profit margin" tier copy, the USP tile
+// labels) are hardcoded here exactly as the source hardcodes them, not wired to any real tier logic
+// — same fidelity approach as every previous screen in this app.
 export default function HomeScreen() {
   const router = useRouter();
   const { cart, loggedIn, addToCart, inc, dec, flash } = useAppState();
@@ -48,14 +57,9 @@ export default function HomeScreen() {
     addToCart(id, 1);
     if (p) flash(addFlashLabel(p.name));
   };
-  const goCart = () => router.push('/cart');
   const goLogin = () => router.push('/account');
   const goCategories = () => router.push('/categories');
 
-  // Ported verbatim from the source's `listingIds`/`listingTitle`/`listingTagline`/`listingTint`
-  // handoff (e.g. line 1441) — every "open a Listing" nav target passes its own fixed id set plus a
-  // title/tagline/tint, carried here via expo-router params since the source's Listing screen is
-  // driven entirely by that state, not a category/brand slug.
   const openListing = (ids: number[], title: string, tagline: string, tint: string) => {
     router.push({ pathname: '/listing', params: { ids: ids.join(','), title, tagline, tint } });
   };
@@ -75,67 +79,42 @@ export default function HomeScreen() {
     <View style={styles.screen}>
       <Header />
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Hero promo */}
-        <View style={styles.hero}>
-          <View style={styles.heroCircle} />
-          <View>
-            <Text style={styles.heroEyebrow}>TRADE PRICE · CASE ORDERS</Text>
-            <Text style={styles.heroTitle}>Immunity & Wellness</Text>
-            <Text style={styles.heroSub}>Up to 50% off your first carton order. Next-day dispatch before 9am.</Text>
-            <Pressable onPress={goCategories} style={styles.heroButton}>
-              <Text style={styles.heroButtonText}>Discover now</Text>
-              <ArrowRightIcon size={14} />
+        {/* Hero carousel */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroRail}>
+          {heroSlides.map((h) => (
+            <Pressable
+              key={h.title}
+              onPress={() => openListingByCategory(h.cat, h.title, categoryTagline(h.cat), h.tint)}
+              style={[styles.heroCard, { backgroundColor: h.tint }]}
+            >
+              <View style={styles.heroCircle} />
+              <View>
+                <Text style={styles.heroEyebrow}>{h.eyebrow}</Text>
+                <Text style={styles.heroTitle}>{h.title}</Text>
+                <Text style={styles.heroBlurb}>{h.blurb}</Text>
+                <View style={styles.heroButton}>
+                  <Text style={styles.heroButtonText}>{h.cta}</Text>
+                  <ArrowRightIcon size={16} color={ds.surface} strokeWidth={1.75} />
+                </View>
+              </View>
             </Pressable>
-          </View>
-          <View style={styles.heroDots}>
-            <View style={[styles.dot, styles.dotActive]} />
-            <View style={styles.dot} />
-            <View style={styles.dot} />
-          </View>
-        </View>
+          ))}
+        </ScrollView>
 
-        {/* Level Up Program — decorative/static per source, not wired to real tier logic */}
-        <Pressable onPress={goCategories} style={styles.levelUp}>
-          <View style={styles.levelUpTop}>
-            <View style={styles.levelUpBadge}>
-              <View style={styles.levelUpBadgeIcon}>
-                <CheckIcon size={12} />
-              </View>
-              <Text style={styles.levelUpBadgeText}>LEVEL UP PROGRAM</Text>
-            </View>
-            <View style={styles.levelUpTopRight}>
-              <View style={styles.percentCircle}>
-                <Text style={styles.percentText}>%</Text>
-              </View>
-              <TrendUpIcon size={22} />
-            </View>
+        {/* Up to 63% profit margin — decorative tier copy, not wired to real tier logic */}
+        <Pressable onPress={goCategories} style={styles.marginBanner}>
+          <View style={styles.marginBannerIcon}>
+            <MarginTrendIcon size={19} />
           </View>
-          <View style={styles.levelUpStatsRow}>
-            <View>
-              <Text style={styles.levelUpLabel}>High margin · up to</Text>
-              <Text style={styles.levelUpStat}>
-                <Text style={{ color: colors.brandGreen }}>63%</Text> profit
-              </Text>
-              <Text style={styles.levelUpFootnote}>on 240 stocked lines when you buy by the carton</Text>
-            </View>
-            <View style={styles.barsRow}>
-              <View style={[styles.bar, { height: 22, backgroundColor: colors.mintTint }]} />
-              <View style={[styles.bar, { height: 32, backgroundColor: 'rgba(37,165,103,.45)' }]} />
-              <View style={[styles.bar, { height: 44, backgroundColor: 'rgba(37,165,103,.7)' }]} />
-              <View style={[styles.bar, { height: 58, backgroundColor: colors.brandGreen }]} />
-            </View>
+          <View style={styles.marginBannerText}>
+            <Text style={styles.marginBannerTitle}>Up to 63% profit margin</Text>
+            <Text style={styles.marginBannerSub}>Tier 2 · ₹2.3k more to unlock Tier 3</Text>
           </View>
-          <View style={styles.progressRow}>
-            <Text style={styles.stars}>★★★</Text>
-            <View style={styles.progressTrack}>
-              <View style={styles.progressFill} />
-            </View>
-            <Text style={styles.tierText}>Tier 3 unlocks at ₹6k</Text>
-          </View>
+          <ChevronRightIcon size={16} color={ds.primaryInk} strokeWidth={2} />
         </Pressable>
 
         {/* Prescription at a glance */}
-        <SectionHeader
+        <DsSectionHeader
           title="Prescription at a glance"
           subtitle="Curated product groups for common prescriptions"
           actionLabel="View all"
@@ -146,143 +125,172 @@ export default function HomeScreen() {
             <Pressable
               key={g.name}
               onPress={() => openListingByCategory(g.cat, g.name, `${g.count} products`, g.tint)}
-              style={styles.prescriptionCard}
+              style={styles.prescriptionTile}
             >
-              <View style={[styles.prescriptionIcon, { borderColor: g.icon }]}>
-                <Text style={[styles.prescriptionGlyph, { color: g.icon }]}>{g.glyph}</Text>
+              <View style={[styles.prescriptionGlyphTile, { backgroundColor: g.tint }]}>
+                <Text style={styles.prescriptionGlyph}>{g.glyph}</Text>
               </View>
               <Text style={styles.prescriptionName}>{g.name}</Text>
-              <Text style={styles.prescriptionCount}>{g.count} products</Text>
             </Pressable>
           ))}
         </View>
 
         {/* Fast-moving offers */}
-        <SectionHeader title="Fast-moving offers" subtitle="Price, pack and use case in one glance" />
+        <DsSectionHeader title="Fast-moving offers" subtitle="Price, pack and use case in one glance" />
         <View style={styles.fastMovingList}>
-          {fastMoving.map((m) => (
-            <View key={m.name} style={styles.fastMovingRow}>
-              <Pressable onPress={() => openProduct(m.pid)} style={[styles.fastMovingSwatch, { backgroundColor: m.tint }]} />
-              <View style={styles.fastMovingInfo}>
-                <Text style={styles.fastMovingName}>{m.name}</Text>
-                <Text style={styles.fastMovingUseCase}>{m.useCase}</Text>
-                <View style={styles.fastMovingChips}>
-                  <View style={styles.fastMovingChip}>
-                    <Text style={styles.fastMovingChipText}>{m.pack}</Text>
-                  </View>
-                  <View style={[styles.fastMovingChip, { backgroundColor: 'rgba(217,169,78,.16)' }]}>
-                    <Text style={[styles.fastMovingChipText, { color: colors.charcoal }]}>{m.price}</Text>
-                  </View>
+          {fastMoving.map((m) => {
+            const qty = cart[m.pid] || 0;
+            const inCart = qty > 0;
+            return (
+              <View key={m.pid} style={styles.fastMovingRow}>
+                <Pressable onPress={() => openProduct(m.pid)} style={styles.fastMovingPhoto}>
+                  <Text style={styles.fastMovingPhotoLabel}>photo</Text>
+                </Pressable>
+                <View style={styles.fastMovingInfo}>
+                  <Pressable onPress={() => openProduct(m.pid)}>
+                    <Text style={styles.fastMovingName} numberOfLines={1}>{m.name}</Text>
+                  </Pressable>
+                  <Text style={styles.fastMovingUseCase} numberOfLines={1}>{m.useCase}</Text>
+                  <Text style={styles.fastMovingPrice}>{m.price}</Text>
                 </View>
+                {inCart ? (
+                  <View style={styles.fastMovingStepper}>
+                    <Pressable onPress={() => dec(m.pid)} style={styles.fastMovingStepperBtn} hitSlop={4}>
+                      {qty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
+                    </Pressable>
+                    <Text style={styles.fastMovingQty}>{qty}</Text>
+                    <Pressable onPress={() => inc(m.pid)} style={styles.fastMovingStepperBtn} hitSlop={4}>
+                      <Text style={styles.stepperGlyph}>+</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={() => {
+                      addToCart(m.pid, 1);
+                      flash(m.name + ' added');
+                    }}
+                    style={styles.fastMovingAdd}
+                  >
+                    <CartIcon size={14} color={ds.surface} />
+                    <Text style={styles.fastMovingAddText}>Add</Text>
+                  </Pressable>
+                )}
               </View>
-              <Pressable
-                onPress={() => {
-                  addToCart(m.pid, 1);
-                  flash(m.name + ' added');
-                }}
-                style={styles.fastMovingAdd}
-              >
-                <Text style={styles.fastMovingAddGlyph}>+</Text>
-              </Pressable>
-            </View>
-          ))}
+            );
+          })}
         </View>
 
         {/* Explore full catalogue CTA */}
-        <View style={styles.catalogueBand}>
-          <Text style={styles.catalogueEyebrow}>300+ PRODUCTS</Text>
-          <Text style={styles.catalogueTitle}>Explore the full catalogue</Text>
-          <Text style={styles.catalogueSub}>Browse every pack, compare prices, and order with verified trade access.</Text>
-          <View style={styles.catalogueButtons}>
-            <Pressable onPress={() => router.push('/categories')} style={[styles.catalogueButton, { backgroundColor: colors.brandGreen }]}>
-              <Text style={[styles.catalogueButtonText, { color: colors.white }]}>Browse catalogue</Text>
-            </Pressable>
-            <Pressable onPress={goLogin} style={[styles.catalogueButton, { backgroundColor: colors.white }]}>
-              <Text style={[styles.catalogueButtonText, { color: colors.forestGreen }]}>Profile</Text>
-            </Pressable>
+        <Pressable onPress={goCategories} style={styles.catalogueBand}>
+          <View style={styles.catalogueText}>
+            <Text style={styles.catalogueTitle}>Explore full catalogue</Text>
+            <Text style={styles.catalogueSub}>300+ products across 8 categories</Text>
+          </View>
+          <ChevronRightIcon size={18} color={ds.surface} strokeWidth={2} />
+        </Pressable>
+
+        {/* USP tiles */}
+        <View style={styles.uspGrid}>
+          <View style={styles.uspTile}>
+            <View style={[styles.uspIconTile, { backgroundColor: ds.primarySoft }]}>
+              <MarginTrendIcon size={17} />
+            </View>
+            <Text style={styles.uspLabel}>Better margin</Text>
+          </View>
+          <View style={styles.uspTile}>
+            <View style={[styles.uspIconTile, { backgroundColor: ds.accentSoft }]}>
+              <DeliveryBoxIcon size={17} />
+            </View>
+            <Text style={styles.uspLabel}>Quick delivery</Text>
+          </View>
+          <View style={styles.uspTile}>
+            <View style={[styles.uspIconTile, { backgroundColor: ds.info }]}>
+              <ShieldCheckIcon size={17} />
+            </View>
+            <Text style={styles.uspLabel}>Authentic ingredients</Text>
           </View>
         </View>
 
-        {/* Buy again — the source removed this section's "View all" link entirely along with the
-            Wishlist screen it used to point to; no replacement target, per source. */}
-        <SectionHeader title="Buy again" subtitle="Ordered at least twice in the last 90 days" />
+        {/* Buy again */}
+        <DsSectionHeader title="Buy again" subtitle="Ordered at least twice in the last 90 days" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
           {buyAgain.map((p) => (
-            <ProductCard
+            <DsProductCard
               key={p.id}
-              variant="rail"
               product={p}
-              priceMode="standard"
-              topBadge={{ text: `${p.times}× ordered`, background: colors.mintTint, color: colors.brandGreen }}
+              width={166}
               onOpen={() => openProduct(p.id)}
               onAdd={() => addProduct(p.id)}
               onInc={() => inc(p.id)}
               onDec={() => dec(p.id)}
-              onGoCart={goCart}
               onLogin={goLogin}
             />
           ))}
         </ScrollView>
 
-        {/* Brands to know — "All brands" link removed entirely per source. Each card's own "Shop X ·
-            N SKUs" button is wired to `openBrand` (brand-name filtered listing), not the dead `shop`
-            handler (category-filtered, never referenced by any onClick in the source markup). */}
-        <SectionHeader title="Brands to know" subtitle="Direct trade partners, no middle margin" />
-        <View style={styles.brandsList}>
+        {/* Brands to know */}
+        <DsSectionHeader title="Brands to know" subtitle="Direct trade partners, no middle margin" />
+        <View style={styles.brandsRow}>
           {brands.map((b) => (
-            <BrandCard
+            <Pressable
               key={b.name}
-              {...b}
-              onShop={() => openListing(productIdsByBrand(b.name), b.short, `Premium ${b.short} products`, b.tint)}
-            />
+              onPress={() => openListing(productIdsByBrand(b.name), b.short, `Premium ${b.short} products`, b.tint)}
+              style={styles.brandCard}
+            >
+              <View style={styles.brandImage}>
+                <Text style={styles.brandImageLabel}>store photo</Text>
+                <View style={styles.brandInitials}>
+                  <Text style={styles.brandInitialsText}>{b.initials}</Text>
+                </View>
+              </View>
+              <View style={styles.brandBody}>
+                <Text style={styles.brandName}>{b.name}</Text>
+                <Text style={styles.brandLine}>{b.line}</Text>
+                <Text style={styles.brandSkus}>{b.skus} products →</Text>
+              </View>
+            </Pressable>
           ))}
         </View>
 
         {/* Best sellers */}
-        <SectionHeader
+        <DsSectionHeader
           title="Best sellers"
           subtitle="Top-moving cases across every outlet"
           actionLabel="View all"
-          onAction={() => openListing(BEST_SELLERS_LISTING_IDS, 'Best sellers', 'Top-moving cases across every outlet', colors.mintTint)}
+          onAction={() => openListing(BEST_SELLERS_LISTING_IDS, 'Best sellers', 'Top-moving cases across every outlet', ds.primarySoft)}
         />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
           {bestSellers.map((p) => (
-            <ProductCard
+            <DsProductCard
               key={p.id}
-              variant="rail"
               product={p}
-              priceMode="standard"
-              topBadge={{ text: `#${p.rank} best seller`, background: colors.gold, color: colors.charcoal }}
+              width={166}
               onOpen={() => openProduct(p.id)}
               onAdd={() => addProduct(p.id)}
               onInc={() => inc(p.id)}
               onDec={() => dec(p.id)}
-              onGoCart={goCart}
               onLogin={goLogin}
             />
           ))}
         </ScrollView>
 
         {/* New arrivals */}
-        <SectionHeader
+        <DsSectionHeader
           title="New arrivals"
           subtitle="Added to the trade catalogue this week"
           actionLabel="View all"
-          onAction={() => openListing(NEW_ARRIVALS_LISTING_IDS, 'New arrivals', 'Added to the trade catalogue this week', colors.mintTint)}
+          onAction={() => openListing(NEW_ARRIVALS_LISTING_IDS, 'New arrivals', 'Added to the trade catalogue this week', ds.primarySoft)}
         />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
           {newArrivals.map((p) => (
-            <ProductCard
+            <DsProductCard
               key={p.id}
-              variant="rail"
               product={p}
-              priceMode="standard"
-              topBadge={{ text: 'New', background: colors.purple, color: colors.white }}
+              width={166}
               onOpen={() => openProduct(p.id)}
               onAdd={() => addProduct(p.id)}
               onInc={() => inc(p.id)}
               onDec={() => dec(p.id)}
-              onGoCart={goCart}
               onLogin={goLogin}
             />
           ))}
@@ -292,7 +300,7 @@ export default function HomeScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.promoRail}>
           {promoBanners.map((pb) => (
             <Pressable key={pb.title} onPress={() => handlePromoBanner(pb)} style={[styles.promoCard, { backgroundColor: pb.tint }]}>
-              <Text style={[styles.promoEyebrow, { color: pb.accent }]}>{pb.eyebrow}</Text>
+              <Text style={styles.promoEyebrow}>{pb.eyebrow}</Text>
               <Text style={styles.promoTitle}>{pb.title}</Text>
               <Text style={styles.promoSub}>{pb.sub}</Text>
             </Pressable>
@@ -300,65 +308,107 @@ export default function HomeScreen() {
         </ScrollView>
 
         {/* Featured products */}
-        <SectionHeader
+        <DsSectionHeader
           title="Featured products"
           subtitle="Hand-picked by your account manager."
           actionLabel="View all"
-          onAction={() => openListing(FEATURED_LISTING_IDS, 'Featured products', 'Hand-picked by your account manager', colors.mintTint)}
+          onAction={() => openListing(FEATURED_LISTING_IDS, 'Featured products', 'Hand-picked by your account manager', ds.primarySoft)}
         />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
           {featured.map((p) => (
-            <ProductCard
+            <DsProductCard
               key={p.id}
-              variant="rail"
               product={p}
-              priceMode="offerSplit"
-              offer={{ hasOffer: p.hasOffer, noOffer: p.noOffer }}
+              width={166}
               onOpen={() => openProduct(p.id)}
               onAdd={() => addProduct(p.id)}
               onInc={() => inc(p.id)}
               onDec={() => dec(p.id)}
-              onGoCart={goCart}
               onLogin={goLogin}
             />
           ))}
         </ScrollView>
 
-        {/* Concern shelves — "Shop the shelf" now opens a Listing scoped to the shelf's own fixed
-            product ids (source line 1466), not a plain category browse. */}
+        {/* Concern shelves */}
         {concerns.map((c) => (
-          <ConcernShelf
-            key={c.title}
-            concern={c}
-            onView={() => openListing(c.ids, c.title, c.blurb, c.tint)}
-            onOpenProduct={openProduct}
-            onAdd={addProduct}
-            onInc={inc}
-            onDec={dec}
-            onGoCart={goCart}
-            onLogin={goLogin}
-          />
+          <View key={c.title}>
+            <Pressable
+              onPress={() => openListing(c.ids, c.title, c.blurb, c.tint)}
+              style={[styles.concernBanner, { backgroundColor: c.tint }]}
+            >
+              <View style={styles.concernIcon}>
+                <ConcernLeafIcon size={19} />
+              </View>
+              <View style={styles.concernText}>
+                <Text style={styles.concernTitle}>{c.title}</Text>
+                <Text style={styles.concernBlurb}>{c.blurb}</Text>
+              </View>
+              <ChevronRightIcon size={18} color={ds.primaryInk} strokeWidth={2} />
+            </Pressable>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+              {c.products.map((p) => (
+                <DsProductCard
+                  key={p.id}
+                  product={p}
+                  width={166}
+                  onOpen={() => openProduct(p.id)}
+                  onAdd={() => addProduct(p.id)}
+                  onInc={() => inc(p.id)}
+                  onDec={() => dec(p.id)}
+                  onLogin={goLogin}
+                />
+              ))}
+            </ScrollView>
+          </View>
         ))}
 
         {/* Doctor's Talk */}
-        <View style={styles.sectionTextBlock}>
-          <Text style={styles.sectionTitle}>Doctor&apos;s Talk</Text>
-          <Text style={styles.sectionSubtitle}>Trusted by practitioners who recommend us to their patients</Text>
+        <View style={styles.plainSectionHeader}>
+          <Text style={styles.plainSectionTitle}>Doctor&apos;s Talk</Text>
+          <Text style={styles.plainSectionSubtitle}>Trusted by practitioners who recommend us to their patients</Text>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
           {doctorTalks.map((d) => (
-            <TestimonialCard key={d.name} kind="doctor" quote={d.quote} name={d.name} title={d.title} initials={d.initials} />
+            <View key={d.name} style={styles.doctorCard}>
+              <Text style={styles.quoteGlyph}>“</Text>
+              <Text style={styles.doctorQuote}>{d.quote}</Text>
+              <View style={styles.testimonialFooter}>
+                <View style={styles.doctorAvatar}>
+                  <Text style={styles.doctorAvatarText}>{d.initials}</Text>
+                </View>
+                <View style={styles.testimonialNameBlock}>
+                  <Text style={styles.testimonialName}>{d.name}</Text>
+                  <Text style={styles.testimonialTag}>{d.title}</Text>
+                </View>
+              </View>
+            </View>
           ))}
         </ScrollView>
 
         {/* What buyers say */}
-        <View style={styles.sectionTextBlock}>
-          <Text style={styles.sectionTitle}>What buyers say</Text>
-          <Text style={styles.sectionSubtitle}>Real feedback from people who order every week</Text>
+        <View style={styles.plainSectionHeader}>
+          <Text style={styles.plainSectionTitle}>What buyers say</Text>
+          <Text style={styles.plainSectionSubtitle}>Real feedback from people who order every week</Text>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
           {buyerReviews.map((r) => (
-            <TestimonialCard key={r.name} kind="buyer" quote={r.quote} name={r.name} tag={r.tag} initials={r.initials} />
+            <View key={r.name} style={styles.reviewCard}>
+              <View style={styles.reviewStars}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Text key={n} style={styles.reviewStar}>★</Text>
+                ))}
+              </View>
+              <Text style={styles.reviewQuote}>{r.quote}</Text>
+              <View style={styles.testimonialFooter}>
+                <View style={styles.reviewAvatar}>
+                  <Text style={styles.reviewAvatarText}>{r.initials}</Text>
+                </View>
+                <View style={styles.testimonialNameBlock}>
+                  <Text style={styles.testimonialName}>{r.name}</Text>
+                  <Text style={styles.testimonialTag}>{r.tag}</Text>
+                </View>
+              </View>
+            </View>
           ))}
         </ScrollView>
       </ScrollView>
@@ -367,153 +417,163 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.cardBg },
-  scrollContent: { paddingBottom: 24 },
+  screen: { flex: 1, backgroundColor: ds.canvas },
+  scrollContent: { paddingBottom: dsSpacing.xl },
 
-  hero: {
-    margin: 14,
-    marginTop: 12,
-    borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: colors.mintTint,
-    padding: 20,
-    paddingBottom: 20,
-    paddingTop: 22,
-  },
-  heroCircle: {
-    position: 'absolute',
-    right: -30,
-    top: -30,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: 'rgba(255,255,255,.22)',
-  },
-  heroEyebrow: { fontFamily: fontFamily[600], fontSize: 10, letterSpacing: 1.4, color: colors.forestGreen },
-  heroTitle: { fontFamily: fontFamily[700], fontSize: 25, lineHeight: 29, color: colors.orange, marginTop: 7 },
-  heroSub: { fontFamily: fontFamily[400], fontSize: 12.5, color: colors.bodyGray, marginTop: 6, maxWidth: 210 },
+  heroRail: { flexDirection: 'row', gap: dsSpacing.md, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
+  heroCard: { width: 302, borderRadius: dsRadii.sheet, overflow: 'hidden', padding: 12, paddingHorizontal: dsSpacing.lg },
+  heroCircle: { position: 'absolute', right: -26, top: -26, width: 118, height: 118, borderRadius: 59, backgroundColor: 'rgba(255,255,255,.22)' },
+  heroEyebrow: { fontFamily: dsFontFamily[700], fontSize: 11, lineHeight: 14, letterSpacing: 1.32, color: ds.ink2 },
+  heroTitle: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.ink, marginTop: 8 },
+  heroBlurb: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4, maxWidth: 206 },
   heroButton: {
-    marginTop: 14,
+    marginTop: dsSpacing.lg,
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    backgroundColor: colors.brandGreen,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 12,
+    gap: dsSpacing.sm,
+    height: 40,
+    paddingHorizontal: dsSpacing.lg,
+    backgroundColor: ds.primaryStrong,
+    borderRadius: dsRadii.button,
   },
-  heroButtonText: { fontFamily: fontFamily[600], fontSize: 12.5, color: colors.white },
-  heroDots: { flexDirection: 'row', gap: 5, marginTop: 16 },
-  dot: { width: 8, height: 3, borderRadius: 2, backgroundColor: 'rgba(37,165,103,.3)' },
-  dotActive: { width: 22, backgroundColor: colors.brandGreen },
+  heroButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
 
-  levelUp: {
-    marginHorizontal: 14,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.borderGray,
-    borderRadius: 18,
-    padding: 16,
-  },
-  levelUpTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  levelUpBadge: {
+  marginBanner: {
+    marginHorizontal: dsSpacing.lg,
+    marginTop: dsSpacing.md,
+    backgroundColor: ds.primarySoft,
+    borderRadius: dsRadii.button,
+    padding: dsSpacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.brandGreen,
-    borderRadius: 999,
-    paddingVertical: 5,
-    paddingRight: 12,
-    paddingLeft: 5,
+    gap: dsSpacing.md,
   },
-  levelUpBadgeIcon: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
-  levelUpBadgeText: { fontFamily: fontFamily[700], fontSize: 10, color: colors.white, letterSpacing: 0.8 },
-  levelUpTopRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  percentCircle: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.8, borderColor: colors.brandGreen, alignItems: 'center', justifyContent: 'center' },
-  percentText: { fontFamily: fontFamily[700], fontSize: 12, color: colors.brandGreen },
-  levelUpStatsRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginTop: 13 },
-  levelUpLabel: { fontFamily: fontFamily[400], fontSize: 12.5, color: colors.bodyGray },
-  levelUpStat: { fontFamily: fontFamily[700], fontSize: 25, color: colors.charcoal, marginTop: 2 },
-  levelUpFootnote: { fontFamily: fontFamily[400], fontSize: 10.5, color: colors.bodyGray, marginTop: 4 },
-  barsRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
-  bar: { width: 11, borderRadius: 3 },
-  progressRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
-  stars: { fontFamily: fontFamily[600], fontSize: 11, color: colors.starYellow, letterSpacing: 1.3 },
-  progressTrack: { flex: 1, height: 5, borderRadius: 3, backgroundColor: colors.mintTint, overflow: 'hidden' },
-  progressFill: { width: '62%', height: 5, backgroundColor: colors.brandGreen },
-  tierText: { fontFamily: fontFamily[600], fontSize: 10.5, color: colors.brandGreen },
+  marginBannerIcon: { width: 38, height: 38, borderRadius: dsRadii.button, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },
+  marginBannerText: { flex: 1, minWidth: 0 },
+  marginBannerTitle: { fontFamily: dsFontFamily[600], fontSize: 16, lineHeight: 22, letterSpacing: -0.16, color: ds.primaryInk },
+  marginBannerSub: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
 
   prescriptionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 9,
-    paddingHorizontal: 14,
-    paddingTop: 12,
+    rowGap: dsSpacing.md,
+    columnGap: dsSpacing.sm,
+    paddingHorizontal: dsSpacing.lg,
+    paddingTop: dsSpacing.md,
   },
-  prescriptionCard: {
-    flexBasis: '31%',
-    flexGrow: 1,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.borderGray,
-    borderRadius: 15,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-  },
-  prescriptionIcon: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.6, alignItems: 'center', justifyContent: 'center' },
-  prescriptionGlyph: { fontFamily: fontFamily[700], fontSize: 14 },
-  prescriptionName: { fontFamily: fontFamily[500], fontSize: 11, lineHeight: 14, color: colors.charcoal, marginTop: 9, minHeight: 28, textAlign: 'center' },
-  prescriptionCount: { fontFamily: fontFamily[400], fontSize: 10, color: colors.bodyGray },
+  prescriptionTile: { width: '31%', flexGrow: 1 },
+  prescriptionGlyphTile: { width: '100%', aspectRatio: 1, borderRadius: dsRadii.button, alignItems: 'center', justifyContent: 'center' },
+  prescriptionGlyph: { fontFamily: dsFontFamily[700], fontSize: 22, lineHeight: 28, color: ds.primaryInk },
+  prescriptionName: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, textAlign: 'center', marginTop: dsSpacing.sm },
 
-  fastMovingList: { paddingHorizontal: 14, paddingTop: 12, gap: 9 },
+  fastMovingList: { paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md, gap: dsSpacing.md },
   fastMovingRow: {
-    backgroundColor: colors.white,
+    backgroundColor: ds.surface,
     borderWidth: 1,
-    borderColor: colors.borderGray,
-    borderRadius: 16,
-    padding: 11,
+    borderColor: ds.line,
+    borderRadius: dsRadii.button,
+    padding: dsSpacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
+    gap: dsSpacing.md,
+    ...dsElevation.e1,
   },
-  fastMovingSwatch: { width: 62, height: 62, borderRadius: 12 },
+  fastMovingPhoto: { width: 72, height: 72, borderRadius: dsRadii.input, backgroundColor: ds.primarySoft, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 4 },
+  fastMovingPhotoLabel: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3 },
   fastMovingInfo: { flex: 1, minWidth: 0 },
-  fastMovingName: { fontFamily: fontFamily[600], fontSize: 12.5, lineHeight: 16, color: colors.charcoal },
-  fastMovingUseCase: { fontFamily: fontFamily[400], fontSize: 10.5, color: colors.bodyGray, marginTop: 2 },
-  fastMovingChips: { flexDirection: 'row', gap: 6, marginTop: 7 },
-  fastMovingChip: { backgroundColor: colors.mintTint, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
-  fastMovingChipText: { fontFamily: fontFamily[600], fontSize: 10, color: colors.brandGreen },
-  fastMovingAdd: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandGreen, alignItems: 'center', justifyContent: 'center' },
-  fastMovingAddGlyph: { color: colors.white, fontSize: 20, fontFamily: fontFamily[400], marginTop: -2 },
+  fastMovingName: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
+  fastMovingUseCase: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
+  fastMovingPrice: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.primaryInk, marginTop: dsSpacing.sm },
+  fastMovingAdd: {
+    height: 40,
+    borderRadius: dsRadii.button,
+    backgroundColor: ds.primaryStrong,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: dsSpacing.sm,
+    paddingHorizontal: dsSpacing.md,
+  },
+  fastMovingAddText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
+  fastMovingStepper: { flexDirection: 'row', alignItems: 'center', height: 40, borderRadius: dsRadii.button, backgroundColor: ds.primarySoft },
+  fastMovingStepperBtn: { width: 36, height: 40, alignItems: 'center', justifyContent: 'center' },
+  fastMovingQty: { minWidth: 24, textAlign: 'center', fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk },
+  stepperGlyph: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk },
 
   catalogueBand: {
-    margin: 14,
-    marginTop: 20,
-    borderRadius: 18,
-    backgroundColor: colors.mintTint,
-    padding: 20,
+    marginHorizontal: dsSpacing.lg,
+    marginTop: dsSpacing.xl,
+    borderRadius: dsRadii.sheet,
+    backgroundColor: ds.primaryInk,
+    paddingHorizontal: dsSpacing.lg,
+    paddingVertical: dsSpacing.md,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: dsSpacing.md,
   },
-  catalogueEyebrow: { fontFamily: fontFamily[600], fontSize: 10.5, letterSpacing: 1.3, color: colors.forestGreen },
-  catalogueTitle: { fontFamily: fontFamily[700], fontSize: 21, color: colors.charcoal, marginTop: 8, textAlign: 'center' },
-  catalogueSub: { fontFamily: fontFamily[400], fontSize: 12, lineHeight: 18, color: colors.bodyGray, marginTop: 8, textAlign: 'center' },
-  catalogueButtons: { flexDirection: 'row', gap: 9, marginTop: 15, alignSelf: 'stretch' },
-  catalogueButton: { flex: 1, height: 44, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  catalogueButtonText: { fontFamily: fontFamily[600], fontSize: 12.5 },
+  catalogueText: { flex: 1, minWidth: 0 },
+  catalogueTitle: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.surface },
+  catalogueSub: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,.72)', marginTop: 4 },
 
-  rail: { flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 2 },
+  uspGrid: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
+  uspTile: { flex: 1, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, padding: dsSpacing.md, alignItems: 'center', ...dsElevation.e1 },
+  uspIconTile: { width: 34, height: 34, borderRadius: dsRadii.button, alignItems: 'center', justifyContent: 'center' },
+  uspLabel: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink, marginTop: dsSpacing.sm },
 
-  brandsList: { paddingHorizontal: 14, paddingTop: 12, gap: 10 },
+  rail: { flexDirection: 'row', gap: dsSpacing.md, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
 
-  promoRail: { flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 20, paddingBottom: 2 },
-  promoCard: { width: 270, borderRadius: 16, padding: 16 },
-  promoEyebrow: { fontFamily: fontFamily[600], fontSize: 10, letterSpacing: 1 },
-  promoTitle: { fontFamily: fontFamily[700], fontSize: 16, lineHeight: 20, color: colors.charcoal, marginTop: 6 },
-  promoSub: { fontFamily: fontFamily[400], fontSize: 11, lineHeight: 16.5, color: colors.bodyGray, marginTop: 5 },
+  brandsRow: { flexDirection: 'row', gap: dsSpacing.md, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
+  brandCard: { flex: 1, minWidth: 0, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, overflow: 'hidden', ...dsElevation.e1 },
+  brandImage: { aspectRatio: 4 / 3, backgroundColor: ds.primarySoft, justifyContent: 'flex-end', padding: 8 },
+  brandImageLabel: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3 },
+  brandInitials: { position: 'absolute', top: 8, left: 8, width: 32, height: 32, borderRadius: dsRadii.input, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },
+  brandInitialsText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22, color: ds.primaryInk },
+  brandBody: { padding: dsSpacing.md, gap: 4 },
+  brandName: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
+  brandLine: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2 },
+  brandSkus: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk, marginTop: 4 },
 
-  sectionTextBlock: { paddingHorizontal: 14, paddingTop: 22 },
-  sectionTitle: { fontFamily: fontFamily[700], fontSize: 19, color: colors.charcoal },
-  sectionSubtitle: { fontFamily: fontFamily[400], fontSize: 11.5, color: colors.bodyGray, marginTop: 2 },
+  promoRail: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.sm, paddingTop: dsSpacing.lg },
+  promoCard: { width: 272, borderRadius: dsRadii.sheet, padding: dsSpacing.md },
+  promoEyebrow: { fontFamily: dsFontFamily[700], fontSize: 11, lineHeight: 14, letterSpacing: 1.32, color: ds.ink2 },
+  promoTitle: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.ink, marginTop: dsSpacing.sm },
+  promoSub: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
+
+  concernBanner: {
+    marginHorizontal: dsSpacing.lg,
+    marginTop: dsSpacing.xl,
+    marginBottom: dsSpacing.md,
+    borderRadius: dsRadii.button,
+    padding: dsSpacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: dsSpacing.md,
+  },
+  concernIcon: { width: 38, height: 38, borderRadius: dsRadii.button, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },
+  concernText: { flex: 1, minWidth: 0 },
+  concernTitle: { fontFamily: dsFontFamily[600], fontSize: 16, lineHeight: 22, letterSpacing: -0.16, color: ds.ink },
+  concernBlurb: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
+
+  plainSectionHeader: { paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.xl },
+  plainSectionTitle: { fontFamily: dsFontFamily[600], fontSize: 16, lineHeight: 22, letterSpacing: -0.16, color: ds.ink },
+  plainSectionSubtitle: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
+
+  doctorCard: { width: 272, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.sheet, padding: dsSpacing.md },
+  quoteGlyph: { fontFamily: dsFontFamily[700], fontSize: 32, lineHeight: 32, color: ds.primarySoft },
+  doctorQuote: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink, marginTop: dsSpacing.md },
+  testimonialFooter: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.sm, marginTop: dsSpacing.md },
+  doctorAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: ds.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  doctorAvatarText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk },
+  testimonialNameBlock: { flex: 1, minWidth: 0 },
+  testimonialName: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
+  testimonialTag: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
+
+  reviewCard: { width: 252, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.sheet, padding: dsSpacing.lg },
+  reviewStars: { flexDirection: 'row' },
+  reviewStar: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.star },
+  reviewQuote: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink, marginTop: dsSpacing.md },
+  reviewAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: ds.canvas, alignItems: 'center', justifyContent: 'center' },
+  reviewAvatarText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
 });

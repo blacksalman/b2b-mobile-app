@@ -2,28 +2,29 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, fontFamily } from '@/theme';
-import { LeafLogoIcon, SearchIcon } from '@/icons';
+import { ds, dsFontFamily } from '@/theme';
+import { LeafMarkIcon, HeaderSearchIcon } from '@/icons';
 
-// Ported verbatim from the shared header (lines 22-38): white bg, bottom border, leaf logo + wordmark
-// (tap -> home), search-bar pill below (tap -> search). Source pads 66px from the top of its fixed
-// 402x874 phone-frame mock (status bar + 12px breathing room); real devices vary, so we reproduce the
-// same visual gap via the device's actual safe-area inset instead of a hardcoded 66px.
+// Rebuilt against the new AyurvedaOne design system (`showHeader` block, Various Mobile App - Phone
+// .dc.html line 23-36): flat `canvas` background (no border/shadow), leaf mark + wordmark row, then
+// a search-bar pill that navigates to /search on tap (it's a static row in the source, not a live
+// text input — the real input lives on the Search screen itself). The source pads 54px from the top
+// of its fixed 402x874 phone-frame mock; real devices vary, so this reproduces the same visual gap
+// via the device's actual safe-area inset instead of a hardcoded 54px, same approach as the previous
+// header build.
 export function Header() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 12 }]}>
-      <View style={styles.row}>
-        <Pressable style={styles.brandRow} onPress={() => router.push('/')} hitSlop={8}>
-          <LeafLogoIcon size={26} />
-          <Text style={styles.wordmark}>AYURVEDAONE</Text>
-        </Pressable>
-      </View>
+      <Pressable style={styles.brandRow} onPress={() => router.push('/')} hitSlop={8}>
+        <LeafMarkIcon size={22} />
+        <Text style={styles.wordmark}>AYURVEDAONE</Text>
+      </Pressable>
       <Pressable style={styles.searchBar} onPress={() => router.push('/search')}>
-        <SearchIcon size={17} color={colors.bodyGray} />
-        <Text style={styles.searchPlaceholder}>Search 3,400+ Ayurvedic SKUs</Text>
+        <HeaderSearchIcon size={16} />
+        <Text style={styles.searchPlaceholder}>Search medicines, brands...</Text>
       </Pressable>
     </View>
   );
@@ -31,44 +32,39 @@ export function Header() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    backgroundColor: colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderGray,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    backgroundColor: ds.canvas,
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 12,
   },
   wordmark: {
-    fontFamily: fontFamily[700],
+    fontFamily: dsFontFamily[700],
     fontSize: 15,
-    color: colors.charcoal,
-    letterSpacing: 1.2,
+    lineHeight: 20,
+    color: ds.primaryInk,
+    letterSpacing: 0.9,
   },
   searchBar: {
-    marginTop: 11,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
-    height: 44,
+    gap: 8,
+    height: 40,
     paddingHorizontal: 12,
-    borderWidth: 1.4,
-    borderColor: colors.borderGray,
-    borderRadius: 14,
-    backgroundColor: colors.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: ds.line,
+    backgroundColor: ds.surface,
   },
   searchPlaceholder: {
-    fontFamily: fontFamily[400],
-    fontSize: 13.5,
-    color: colors.bodyGray,
+    fontFamily: dsFontFamily[400],
+    fontSize: 14,
+    lineHeight: 21,
+    color: ds.ink2,
     flex: 1,
   },
 });

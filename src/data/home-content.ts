@@ -1,9 +1,16 @@
-import { products } from './products';
-import { decorateProduct, discountBadge } from './decorateProduct';
+import { products, productById } from './products';
+import { decorateProduct, discountBadge, marginOf, reviewCountOf } from './decorateProduct';
+import { money } from '@/utils/money';
 import type { CartState, DecoratedProduct } from './types';
 
-// P[i] in the source script is 0-indexed into the same 10-product array; ids are 1-10 in that same
-// order, so P[i] === products[i]. Kept as a helper to mirror the source's `P[n]` references exactly.
+// Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, DCLogic
+// `renderVals()` section, line 2611+) — a full content pull for the redesigned Home screen, not a
+// restyle of the old data. Only Home/Search import the VALUE exports below (verified via grep), but
+// the RailProduct/Concern TYPES are also imported by categories-content.ts, listing-content.ts,
+// product-detail-content.ts and ProductCard.tsx/ConcernShelf.tsx (screens not yet migrated) — so
+// `brandUpper`/`discount`/`tags` stay on these types even though the new Home/Search cards don't
+// render them, and the new `reviewCount` field is optional rather than required so those untouched
+// files don't need changes.
 const P = products;
 
 export interface RailProduct extends DecoratedProduct {
@@ -11,84 +18,81 @@ export interface RailProduct extends DecoratedProduct {
   margin: string;
   brandUpper: string;
   discount: string;
+  reviewCount?: number;
 }
 
 function decorateWithContext(
   product: (typeof products)[number],
   cart: CartState,
   loggedIn: boolean,
-  extra: { rating: string; margin: string },
+  rating: string,
 ): RailProduct {
   return {
     ...decorateProduct(product, cart[product.id] || 0, loggedIn),
-    rating: extra.rating,
-    margin: extra.margin,
+    rating,
+    margin: marginOf(product.id),
     brandUpper: product.brand.toUpperCase(),
     discount: discountBadge(product),
+    reviewCount: reviewCountOf(product.id),
   };
 }
 
-// --- Buy again (line 1449) ---
+// --- Buy again (line 2738) ---
 const BUY_AGAIN_SRC = [P[0], P[9], P[6], P[2], P[1]];
 const BUY_AGAIN_TIMES = [7, 5, 4, 3, 3];
 const BUY_AGAIN_RATING = ['4.5', '4.7', '4.6', '4.4', '4.8'];
-const BUY_AGAIN_MARGIN = ['22%', '18%', '14%', '19%', '25%'];
 
 export function getBuyAgain(cart: CartState, loggedIn: boolean): (RailProduct & { times: number })[] {
   return BUY_AGAIN_SRC.map((p, i) => ({
-    ...decorateWithContext(p, cart, loggedIn, { rating: BUY_AGAIN_RATING[i], margin: BUY_AGAIN_MARGIN[i] }),
+    ...decorateWithContext(p, cart, loggedIn, BUY_AGAIN_RATING[i]),
     times: BUY_AGAIN_TIMES[i],
   }));
 }
 
-// --- Featured (line 1458) ---
+// --- Featured (line 2760) — the only rail where the compare-at price is conditional (`hasOffer`) ---
 const FEATURED_SRC = [P[2], P[0], P[5], P[7]];
 const FEATURED_RATING = ['4.7', '4.9', '4.4', '4.2'];
-const FEATURED_MARGIN = ['19%', '22%', '21%', '16%'];
 
 export function getFeatured(cart: CartState, loggedIn: boolean): (RailProduct & { hasOffer: boolean; noOffer: boolean })[] {
   return FEATURED_SRC.map((p, i) => ({
-    ...decorateWithContext(p, cart, loggedIn, { rating: FEATURED_RATING[i], margin: FEATURED_MARGIN[i] }),
+    ...decorateWithContext(p, cart, loggedIn, FEATURED_RATING[i]),
     hasOffer: i !== 1,
     noOffer: i === 1,
   }));
 }
 
-// Ported verbatim from `openFeatured` (line 1441): "View all" on this rail opens a Listing with the
-// SAME id set shown here — the Listing screen just re-decorates them with its own generic
-// rating/margin cycling instead of these fixed per-index arrays.
+// Ported verbatim from `openFeatured` (line 2758): "View all" opens a Listing with this same id set.
 export const FEATURED_LISTING_IDS = FEATURED_SRC.map((p) => p.id);
 
-// --- Best sellers (line 1486) ---
+// --- Best sellers (line 2791) ---
 const BEST_SELLERS_SRC = [P[0], P[2], P[9], P[6], P[5]];
 const BEST_SELLERS_RATING = ['4.9', '4.7', '4.6', '4.5', '4.4'];
-const BEST_SELLERS_MARGIN = ['22%', '19%', '18%', '14%', '21%'];
 
 export function getBestSellers(cart: CartState, loggedIn: boolean): (RailProduct & { rank: number })[] {
   return BEST_SELLERS_SRC.map((p, i) => ({
-    ...decorateWithContext(p, cart, loggedIn, { rating: BEST_SELLERS_RATING[i], margin: BEST_SELLERS_MARGIN[i] }),
+    ...decorateWithContext(p, cart, loggedIn, BEST_SELLERS_RATING[i]),
     rank: i + 1,
   }));
 }
 
-// Ported verbatim from `openBestSellers` (line 1472) — same id set as this rail.
+// Ported verbatim from `openBestSellers` (line 2789) — same id set as this rail.
 export const BEST_SELLERS_LISTING_IDS = BEST_SELLERS_SRC.map((p) => p.id);
 
-// --- New arrivals (line 1490) ---
+// --- New arrivals (line 2797) ---
 const NEW_ARRIVALS_SRC = [P[5], P[7], P[1], P[6], P[9]];
 const NEW_ARRIVALS_RATING = ['4.4', '4.2', '4.8', '4.3', '4.5'];
-const NEW_ARRIVALS_MARGIN = ['21%', '16%', '25%', '12%', '17%'];
 
 export function getNewArrivals(cart: CartState, loggedIn: boolean): RailProduct[] {
-  return NEW_ARRIVALS_SRC.map((p, i) =>
-    decorateWithContext(p, cart, loggedIn, { rating: NEW_ARRIVALS_RATING[i], margin: NEW_ARRIVALS_MARGIN[i] }),
-  );
+  return NEW_ARRIVALS_SRC.map((p, i) => decorateWithContext(p, cart, loggedIn, NEW_ARRIVALS_RATING[i]));
 }
 
-// Ported verbatim from `openNewArrivals` (line 1478) — same id set as this rail.
+// Ported verbatim from `openNewArrivals` (line 2795) — same id set as this rail.
 export const NEW_ARRIVALS_LISTING_IDS = NEW_ARRIVALS_SRC.map((p) => p.id);
 
-// --- Concerns / shelves (line 1463) ---
+// --- Concerns / shelves (line 2765) — the new card markup never renders `tags`, but the type keeps
+// it (see the file-level note above: ConcernShelf.tsx, not migrated yet, still reads it) using the
+// same tag copy as the previous pull. `margin` is no longer a per-index array — deco() never
+// overrides it, so every concern-shelf card uses the same `marginOf()` formula as everywhere else. ---
 interface ConcernSrc {
   title: string;
   tint: string;
@@ -97,34 +101,13 @@ interface ConcernSrc {
   cat: string;
   idx: number[];
   ratings: string[];
-  margins: string[];
 }
 
 const CONCERNS_SRC: ConcernSrc[] = [
-  {
-    title: 'Immunity & recovery shelf', tint: '#DCF5E9',
-    blurb: 'Rasayana formulations built for daily repeat orders',
-    tags: ['High repeat demand', 'Bulk friendly', 'Easy reorder'],
-    cat: 'Rasayana & Immunity', idx: [1, 9, 0, 6], ratings: ['4.8', '4.6', '4.5', '4.7'], margins: ['25%', '14%', '22%', '18%'],
-  },
-  {
-    title: 'Digestive & metabolic shelf', tint: '#FBEFD8',
-    blurb: 'Classical churna and vati for common metabolic prescriptions',
-    tags: ['High frequency', 'Long shelf life', 'Trade pricing'],
-    cat: 'Diabetes Care', idx: [3, 4, 8, 2], ratings: ['4.6', '4.5', '4.7', '4.4'], margins: ['16%', '19%', '15%', '21%'],
-  },
-  {
-    title: 'Skin & hair care shelf', tint: '#E4EEFB',
-    blurb: 'Herbal tailas and oils for daily skin and scalp care',
-    tags: ['Cold-pressed', 'Daily use', 'Dermat tested'],
-    cat: 'Skin & Hair Care', idx: [0, 9, 5, 7], ratings: ['4.7', '4.5', '4.6', '4.3'], margins: ['18%', '22%', '14%', '20%'],
-  },
-  {
-    title: 'Joint & muscle relief shelf', tint: '#F6E3E7',
-    blurb: 'Taila and guggulu formulations for chronic joint care',
-    tags: ['Bulk cartons', 'Long shelf life', 'Consistent quality'],
-    cat: 'Joint & Muscle Care', idx: [6, 2, 1, 3], ratings: ['4.6', '4.8', '4.4', '4.5'], margins: ['17%', '20%', '23%', '15%'],
-  },
+  { title: 'Immunity & recovery shelf', tint: '#DCF5E9', blurb: 'Rasayana formulations built for daily repeat orders', tags: ['High repeat demand', 'Bulk friendly', 'Easy reorder'], cat: 'Rasayana & Immunity', idx: [1, 9, 0, 6], ratings: ['4.8', '4.6', '4.5', '4.7'] },
+  { title: 'Digestive & metabolic shelf', tint: '#FCF1E0', blurb: 'Classical churna and vati for common metabolic prescriptions', tags: ['High frequency', 'Long shelf life', 'Trade pricing'], cat: 'Diabetes Care', idx: [3, 4, 8, 2], ratings: ['4.6', '4.5', '4.7', '4.4'] },
+  { title: 'Skin & hair care shelf', tint: '#EAEFF7', blurb: 'Herbal tailas and oils for daily skin and scalp care', tags: ['Cold-pressed', 'Daily use', 'Dermat tested'], cat: 'Skin & Hair Care', idx: [0, 9, 5, 7], ratings: ['4.7', '4.5', '4.6', '4.3'] },
+  { title: 'Joint & muscle relief shelf', tint: '#F7EBED', blurb: 'Taila and guggulu formulations for chronic joint care', tags: ['Bulk cartons', 'Long shelf life', 'Consistent quality'], cat: 'Joint & Muscle Care', idx: [6, 2, 1, 3], ratings: ['4.6', '4.8', '4.4', '4.5'] },
 ];
 
 export interface Concern {
@@ -134,7 +117,7 @@ export interface Concern {
   tags: string[];
   cat: string;
   /** Ported verbatim from `view:()=>this.setState({listingIds:c.idx.map(i=>P[i].id),...})`
-   *  (line 1466) — "Shop the shelf" opens a Listing scoped to exactly these ids. */
+   *  (line 2783) — "view" opens a Listing scoped to exactly these ids. */
   ids: number[];
   products: RailProduct[];
 }
@@ -147,54 +130,79 @@ export function getConcerns(cart: CartState, loggedIn: boolean): Concern[] {
     tags: c.tags,
     cat: c.cat,
     ids: c.idx.map((pi) => P[pi].id),
-    products: c.idx.map((pi, i) =>
-      decorateWithContext(P[pi], cart, loggedIn, { rating: c.ratings[i], margin: c.margins[i] }),
-    ),
+    products: c.idx.map((pi, i) => decorateWithContext(P[pi], cart, loggedIn, c.ratings[i])),
   }));
 }
 
-// --- Prescription groups (line 1505) — each group now maps to its own real category (source fixed
-// a bug here: every group used to open the same generic 'Health supplement' category regardless of
-// its actual subject; now each opens a Listing filtered to its correct `cat`). ---
+// --- Prescription groups (line 2827) — `icon` is unused in the new card markup (the glyph's text
+// color is fixed `#0C4733`, not per-group), so it's dropped here. ---
 export const prescriptionGroups = [
-  { name: 'Grahani', count: 5, tint: '#DCF5E9', icon: '#25A567', glyph: '∿', cat: 'Diabetes Care' },
-  { name: 'Yakrith Vikara', count: 2, tint: 'rgba(232,135,90,.14)', icon: '#E8875A', glyph: '❧', cat: 'Rasayana & Immunity' },
-  { name: 'Prameha', count: 5, tint: 'rgba(74,143,199,.14)', icon: '#4A8FC7', glyph: '◍', cat: 'Diabetes Care' },
-  { name: 'Tvak Roga', count: 7, tint: 'rgba(155,127,206,.16)', icon: '#9B7FCE', glyph: '⛨', cat: 'Skin & Hair Care' },
-  { name: 'Pravahi Atisara', count: 2, tint: 'rgba(225,92,109,.14)', icon: '#E15C6D', glyph: '◐', cat: 'Classical Medicines' },
-  { name: 'Ashmari', count: 2, tint: '#DCF5E9', icon: '#0F3D2E', glyph: '⚕', cat: 'Joint & Muscle Care' },
+  { name: 'Grahani', count: 5, tint: '#DCF5E9', glyph: '∿', cat: 'Diabetes Care' },
+  { name: 'Yakrith Vikara', count: 2, tint: '#FCF1E0', glyph: '❧', cat: 'Rasayana & Immunity' },
+  { name: 'Prameha', count: 5, tint: '#EAEFF7', glyph: '◍', cat: 'Diabetes Care' },
+  { name: 'Tvak Roga', count: 7, tint: '#EAEFF7', glyph: '⛨', cat: 'Skin & Hair Care' },
+  { name: 'Pravahi Atisara', count: 2, tint: '#F7EBED', glyph: '◐', cat: 'Classical Medicines' },
+  { name: 'Ashmari', count: 2, tint: '#DCF5E9', glyph: '⚕', cat: 'Joint & Muscle Care' },
 ];
 
-// --- Fast-moving offers (line 1507) — small mock rows, not full decorated products ---
-export const fastMoving = [
-  { name: 'Lomashatana Lepa', useCase: 'Lomashatanartha', pack: '60gms', price: '₹4.20', tint: 'rgba(217,169,78,.22)', pid: 1 },
-  { name: 'Swarnmakshik Bhasma', useCase: 'Paandu', pack: '5gms', price: '₹0.90', tint: 'rgba(74,143,199,.18)', pid: 6 },
-  { name: 'Kumkumadi Taila', useCase: 'Vyanga', pack: '10ml', price: '₹3.00', tint: 'rgba(155,127,206,.18)', pid: 7 },
+// --- Fast-moving offers (line 2815) — the new source now shows the REAL product's own name/pack/
+// price (`m.name = x.name`, `m.pack = x.cs`, `m.price = money(x.price)`) instead of the old design's
+// fictional standalone names ("Lomashatana Lepa" etc.) that didn't match the linked product. ---
+const FAST_MOVING_SRC = [
+  { useCase: 'Grahani', pid: 1 },
+  { useCase: 'Vyanga', pid: 6 },
+  { useCase: 'Khalitya', pid: 8 },
 ];
 
-// --- Promo banner carousel (line 1436) — the source fixed the first banner's nav target since our
-// last sync: it used to point at a "Fruit & Vegetables" category left over from the "Various" grocery
-// template this skin was derived from; it now correctly opens a Listing for 'Classical Medicines'
-// (702 SKUs, matching CATS) instead.
+export interface FastMovingItem {
+  pid: number;
+  useCase: string;
+  name: string;
+  pack: string;
+  price: string;
+}
+
+export const fastMoving: FastMovingItem[] = FAST_MOVING_SRC.map((m) => {
+  const p = productById(m.pid)!;
+  return { pid: m.pid, useCase: m.useCase, name: p.name, pack: p.cs, price: money(p.price || 0) };
+});
+
+// --- Hero carousel (line 2742) — new: 3 swipeable tinted slides, replacing the old design's single
+// static hero block. ---
+export interface HeroSlide {
+  eyebrow: string;
+  title: string;
+  tint: string;
+  blurb: string;
+  cta: string;
+  cat: string;
+}
+
+export const heroSlides: HeroSlide[] = [
+  { eyebrow: 'TRADE PRICE · CASE ORDERS', title: 'Immunity & Wellness', tint: '#DCF5E9', blurb: 'Up to 50% off your first carton order. Next-day dispatch before 9am.', cta: 'Discover now', cat: 'Rasayana & Immunity' },
+  { eyebrow: 'GMP CERTIFIED · BULK', title: 'Classical Medicines', tint: '#EDF1EA', blurb: 'Churna, vati and bhasma in trade cartons. Batch-tested, fully traceable.', cta: 'Shop classical', cat: 'Classical Medicines' },
+  { eyebrow: 'NET 30 TERMS', title: 'Skin & Hair Care', tint: '#EAEFF7', blurb: 'Cold-pressed tailas and oils. Order now, pay in 30 days on approved accounts.', cta: 'Browse tailas', cat: 'Skin & Hair Care' },
+];
+
+// --- Promo banner carousel (line 2753) — `eyebrow`/`title`/`sub` all render in fixed colors in the
+// new markup (no per-banner accent), so the old design's `accent` field is dropped. ---
 export const promoBanners = [
   {
     eyebrow: 'BULK PRICING', title: 'Save more on 3+ cases', sub: 'Automatic tier discounts applied at checkout',
-    tint: '#DCF5E9', accent: '#0F3D2E',
+    tint: '#DCF5E9',
     targetListing: { cat: 'Classical Medicines', title: 'Classical Medicines', tagline: '702 SKUs · case pricing', tint: '#DCF5E9' },
   },
-  { eyebrow: 'NEW STOCK', title: "This week's fresh arrivals", sub: 'Restocked daily from verified farms and mills', tint: '#FBEFD8', accent: '#7A5A1E', targetScreen: 'categories' as const },
-  { eyebrow: 'FREE DELIVERY', title: 'Free delivery over ₹5,000', sub: 'On every order across all pickup zones', tint: '#E4EEFB', accent: '#1E4E7A', targetScreen: 'stores' as const },
+  { eyebrow: 'NEW STOCK', title: "This week's fresh arrivals", sub: 'Restocked daily from verified farms and mills', tint: '#FCF1E0', targetScreen: 'categories' as const },
+  { eyebrow: 'FREE DELIVERY', title: 'Free delivery over ₹5,000', sub: 'On every order across all pickup zones', tint: '#EAEFF7', targetScreen: 'stores' as const },
 ];
 
-// --- Brands to know (line 1484) --- Each card's bottom "Shop X · N SKUs" button is wired to
-// `openBrand` in the source (brand-name filtered listing: title=short, tagline='Premium X products',
-// tint=b.tint) — the sibling `shop` handler (category-filtered) exists in the source's JS but is
-// never referenced by any onClick in the markup, confirmed by grep; it's dead code, same pattern as
-// the earlier confirmed-dead voice-search trigger. Home wires the card's tap to `openBrand`'s logic.
+// --- Brands to know (line 2801) — card image placeholder is fixed `#DCF5E9` in the new markup, not
+// `b.tint`, so tint is kept only as data (still used by `openBrand`'s listing tint) but no longer
+// drives the card's own visual. ---
 export const brands = [
   {
     name: 'Himvin Ayurveda', short: 'Himvin', initials: 'HA', line: 'Classical medicines · Haridwar',
-    rating: '4.6', skus: 128, margin: '19%', lead: 'Next-day', tint: 'rgba(217,169,78,.22)',
+    rating: '4.6', skus: 128, margin: '19%', lead: 'Next-day', tint: '#FCF1E0',
     blurb: 'GMP-certified manufacturer supplying 400+ pharmacies. Batch-tested churna and vati with full traceability on every carton.',
     cat: 'Classical Medicines',
     usps: ['AYUSH licensed', 'GMP certified', 'Batch traceability', 'Third-party lab tested'],
@@ -202,7 +210,7 @@ export const brands = [
   },
   {
     name: 'Sanjivani Ayurveda', short: 'Sanjivani', initials: 'SA', line: 'Tailas & skin care · Kerala',
-    rating: '4.8', skus: 96, margin: '14%', lead: '48-hour', tint: 'rgba(217,169,78,.22)',
+    rating: '4.8', skus: 96, margin: '14%', lead: '48-hour', tint: '#FCF1E0',
     blurb: 'Cold-pressed tailas and oils in trade cartons. Locked contract pricing for the full quarter once you place two orders.',
     cat: 'Skin & Hair Care',
     usps: ['Cold-pressed', 'Quarterly price lock', 'Trade cartons', 'Non-GMO verified'],
@@ -210,14 +218,14 @@ export const brands = [
   },
 ].map((b) => ({ ...b, metaLine: `${b.margin} avg margin · ${b.lead} delivery` }));
 
-// --- Doctor's Talk (line 1530) ---
+// --- Doctor's Talk (line 2844) — unchanged content from the previous pull. ---
 export const doctorTalks = [
   { quote: 'We recommend this platform to every clinic that needs verified supply chains and consistent batch quality.', name: 'Dr. Anita Rao', title: 'Clinical Nutritionist, 14 yrs practice', initials: 'AR' },
   { quote: 'Traceability on every carton means I can vouch for what my patients are buying, batch after batch.', name: 'Dr. Karan Mehta', title: 'Ayurvedic Physician', initials: 'KM' },
   { quote: 'Consistent supply and clear labeling — it is rare to find a wholesale partner this reliable.', name: 'Dr. Leela Nair', title: 'Dietitian & Wellness Consultant', initials: 'LN' },
 ];
 
-// --- What buyers say (line 1524) ---
+// --- What buyers say (line 2838) — unchanged content from the previous pull. ---
 export const buyerReviews = [
   { quote: 'Ordering for our pharmacy used to take hours across three distributors. Now it is one app, one delivery slot, and prices that make sense for bulk.', name: 'Priya Sharma', tag: 'Pharmacy owner, Bengaluru', initials: 'PS' },
   { quote: 'Consistent stock, transparent pricing, and support that actually answers the phone during peak hours.', name: 'Farhan Sheikh', tag: 'Wellness store chain manager, Pune', initials: 'FS' },

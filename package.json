@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo-google-fonts/dm-sans": "^0.4.2",
+    "@expo-google-fonts/inter": "^0.4.2",
     "expo": "~54.0.8",
     "expo-constants": "~18.0.14",
     "expo-device": "~8.0.10",

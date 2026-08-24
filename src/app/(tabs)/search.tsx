@@ -2,9 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, fontFamily } from '@/theme';
-import { BackChevronIcon, CloseIcon, SearchIcon } from '@/icons';
-import { ProductCard } from '@/components/composite/ProductCard';
+import { ds, dsFontFamily, dsRadii, dsSpacing } from '@/theme';
+import { BackChevronIcon, CloseIcon, SearchIcon, MicIcon } from '@/icons';
+import { DsProductCard } from '@/components/ds/DsProductCard';
 import { getSearchResults, recentSearches } from '@/data/search-content';
 import { useAppState } from '@/state/AppStateContext';
 import { productById } from '@/data/products';
@@ -13,11 +13,13 @@ function addFlashLabel(name: string): string {
   return name.split(' ').slice(0, 2).join(' ') + ' added';
 }
 
-// Note: the source defines a `listening` state + voice-search panel (mic pulse, "Listening…",
-// "Use 'lamb'"), but no element anywhere in the source markup actually calls `toggleVoice` — the
-// voice-search UI is dead code in the shipped design (unreachable, like the gated-pricing path with
-// no gated:true seed product). Per the fidelity rule we do not add a trigger button that doesn't
-// exist in the source; `listening` stays false in practice here.
+// Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isSearch
+// block, line 750-833). Same fidelity note as the previous Search build: the source defines a
+// `listening` state + full voice-search panel (mic pulse, "Listening…", 'Use "lamb"'), but nothing
+// in the source markup ever calls `toggleVoice` — it's unreachable dead code in the shipped design,
+// not a missing trigger button we should add. `listening` stays permanently false here, same as
+// before; the panel JSX is kept (matching the source's own always-present-but-unreachable structure)
+// rather than deleted.
 export default function SearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -35,7 +37,6 @@ export default function SearchScreen() {
     addToCart(id, 1);
     if (p) flash(addFlashLabel(p.name));
   };
-  const goCart = () => router.push('/cart');
   const goLogin = () => router.push('/account');
 
   return (
@@ -43,20 +44,20 @@ export default function SearchScreen() {
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}>
         <View style={styles.topRow}>
           <Pressable onPress={() => router.push('/')} style={styles.backButton} hitSlop={8}>
-            <BackChevronIcon size={20} />
+            <BackChevronIcon size={20} color={ds.ink} />
           </Pressable>
           <View style={styles.searchInput}>
-            <SearchIcon size={17} color={colors.brandGreen} />
+            <SearchIcon size={17} color={ds.primaryInk} />
             <TextInput
               value={query}
               onChangeText={setQuery}
               placeholder="Search SKUs, brands, cases"
-              placeholderTextColor={colors.bodyGray}
+              placeholderTextColor={ds.ink3}
               style={styles.input}
             />
             {!!query && (
               <Pressable onPress={() => setQuery('')} style={styles.clearButton} hitSlop={8}>
-                <CloseIcon size={10} />
+                <CloseIcon size={10} color={ds.ink2} />
               </Pressable>
             )}
           </View>
@@ -65,7 +66,7 @@ export default function SearchScreen() {
         {listening && (
           <View style={styles.listeningPanel}>
             <View style={styles.micCircle}>
-              <Text style={styles.micGlyph}>●</Text>
+              <MicIcon size={24} color={ds.surface} />
             </View>
             <Text style={styles.listeningTitle}>Listening…</Text>
             <Text style={styles.listeningSub}>Try &quot;two cases of lamb chops&quot;</Text>
@@ -77,7 +78,7 @@ export default function SearchScreen() {
 
         {!hasQuery && (
           <>
-            <Text style={styles.recentLabel}>RECENT</Text>
+            <Text style={styles.sectionLabel}>RECENT</Text>
             <View style={styles.recentChips}>
               {recentSearches.map((q) => (
                 <Pressable key={q} onPress={() => setQuery(q)} style={styles.recentChip}>
@@ -90,19 +91,17 @@ export default function SearchScreen() {
 
         {hasQuery && (
           <>
-            <Text style={styles.resultsLabel}>RESULTS FOR &quot;{query}&quot;</Text>
+            <Text style={styles.sectionLabel}>RESULTS FOR &quot;{query}&quot;</Text>
             <View style={styles.grid}>
               {results.map((p) => (
-                <ProductCard
+                <DsProductCard
                   key={p.id}
-                  variant="grid"
-                  dense={false}
-                  product={{ ...p, hasOffer: p.showPrice, noOffer: false }}
+                  product={p}
+                  width="48%"
                   onOpen={() => openProduct(p.id)}
                   onAdd={() => addProduct(p.id)}
                   onInc={() => inc(p.id)}
                   onDec={() => dec(p.id)}
-                  onGoCart={goCart}
                   onLogin={goLogin}
                 />
               ))}
@@ -115,41 +114,39 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.cardBg },
-  content: { paddingHorizontal: 14, paddingBottom: 24 },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  backButton: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  screen: { flex: 1, backgroundColor: ds.canvas },
+  content: { paddingHorizontal: dsSpacing.lg, paddingBottom: dsSpacing.xl },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.sm },
+  backButton: { width: 40, height: 40, borderRadius: dsRadii.pill, alignItems: 'center', justifyContent: 'center' },
   searchInput: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
-    height: 46,
-    paddingHorizontal: 12,
-    borderWidth: 1.6,
-    borderColor: colors.brandGreen,
-    borderRadius: 14,
-    backgroundColor: colors.white,
+    gap: dsSpacing.sm,
+    height: 44,
+    paddingHorizontal: dsSpacing.md,
+    borderWidth: 1.5,
+    borderColor: ds.primary,
+    borderRadius: dsRadii.sheet,
+    backgroundColor: ds.surface,
   },
-  input: { flex: 1, fontFamily: fontFamily[400], fontSize: 13.5, color: colors.charcoal, padding: 0 },
-  clearButton: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.borderGray, alignItems: 'center', justifyContent: 'center' },
+  input: { flex: 1, fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink, padding: 0 },
+  clearButton: { width: 20, height: 20, borderRadius: 10, backgroundColor: ds.line, alignItems: 'center', justifyContent: 'center' },
   listeningPanel: {
-    marginTop: 14,
-    backgroundColor: colors.forestGreen,
-    borderRadius: 18,
-    padding: 22,
+    marginTop: dsSpacing.lg,
+    backgroundColor: ds.primaryStrong,
+    borderRadius: dsRadii.sheet,
+    padding: dsSpacing.lg,
     alignItems: 'center',
   },
-  micCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.orange, alignItems: 'center', justifyContent: 'center' },
-  micGlyph: { color: colors.white, fontSize: 10 },
-  listeningTitle: { fontFamily: fontFamily[600], fontSize: 14, color: colors.white, marginTop: 14 },
-  listeningSub: { fontFamily: fontFamily[400], fontSize: 11.5, color: 'rgba(255,255,255,.72)', marginTop: 4 },
-  useButton: { marginTop: 14, backgroundColor: colors.gold, borderRadius: 11, paddingHorizontal: 16, paddingVertical: 10 },
-  useButtonText: { fontFamily: fontFamily[600], fontSize: 12, color: colors.charcoal },
-  recentLabel: { fontFamily: fontFamily[600], fontSize: 12, color: colors.bodyGray, letterSpacing: 0.7, marginTop: 18 },
-  recentChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 9 },
-  recentChip: { backgroundColor: colors.white, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
-  recentChipText: { fontFamily: fontFamily[500], fontSize: 11.5, color: colors.bodyGray },
-  resultsLabel: { fontFamily: fontFamily[600], fontSize: 12, color: colors.bodyGray, letterSpacing: 0.7, marginTop: 20 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 11 },
+  micCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: ds.accent, alignItems: 'center', justifyContent: 'center' },
+  listeningTitle: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface, marginTop: dsSpacing.md },
+  listeningSub: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,.72)', marginTop: 4 },
+  useButton: { marginTop: dsSpacing.md, backgroundColor: ds.accent, borderRadius: dsRadii.button, paddingHorizontal: 16, paddingVertical: 8 },
+  useButtonText: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.ink },
+  sectionLabel: { fontFamily: dsFontFamily[600], fontSize: 12, lineHeight: 16, letterSpacing: 0.48, color: ds.ink2, marginTop: dsSpacing.xl },
+  recentChips: { flexDirection: 'row', flexWrap: 'wrap', gap: dsSpacing.sm, marginTop: dsSpacing.md },
+  recentChip: { backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.pill, paddingHorizontal: dsSpacing.md, paddingVertical: dsSpacing.sm },
+  recentChipText: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink2 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: dsSpacing.md, marginTop: dsSpacing.md },
 });

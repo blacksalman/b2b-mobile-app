@@ -1,82 +1,55 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
-import { colors, fontFamily } from '@/theme';
+import { ds, dsFontFamily, dsRadii, dsSpacing } from '@/theme';
+import { FabChevronIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 
 interface MiniCartFabProps {
   bottomOffset: number;
-  onPreview: () => void;
-  onCheckout: () => void;
+  onPress: () => void;
   onLayout?: (e: LayoutChangeEvent) => void;
 }
 
-// Ported verbatim from `showMiniCartFab` (source line 1751): a floating bar pinned just above the tab
-// bar showing the cart total + item count, "Preview" (opens the mini-cart sheet) and "Checkout"
-// (skips straight past the Cart page). Visibility (cart non-empty, sheet closed, allowed screen) is
-// gated by the caller — see `(tabs)/_layout.tsx`.
-export function MiniCartFab({ bottomOffset, onPreview, onCheckout, onLayout }: MiniCartFabProps) {
+// Rebuilt against the new AyurvedaOne design system (various-mobile-app-phone.dc.html line ~2440,
+// `showMiniCartFab`). The new source drops the old bar's "Preview"/"Checkout" split entirely — it's
+// now a single floating pill ("{cartCount} items · View cart") that taps straight through to Cart, no
+// preview sheet. Visibility (cart non-empty, allowed screen) is still gated by the caller — see
+// `(tabs)/_layout.tsx`.
+export function MiniCartFab({ bottomOffset, onPress, onLayout }: MiniCartFabProps) {
   const { cartTotals } = useAppState();
-  const { total, mrpTotal, cartHasDiscount, cartCount } = cartTotals;
+  const { cartCount } = cartTotals;
 
   return (
-    <View style={[styles.bar, { bottom: bottomOffset }]} onLayout={onLayout}>
-      <View style={styles.info}>
-        <View style={styles.totalRow}>
-          <Text style={styles.total}>{total}</Text>
-          {cartHasDiscount && <Text style={styles.mrp}>{mrpTotal}</Text>}
+    <View style={[styles.wrap, { bottom: bottomOffset, pointerEvents: 'box-none' }]} onLayout={onLayout}>
+      <Pressable onPress={onPress} style={styles.pill}>
+        <Text style={styles.label} numberOfLines={1}>{cartCount} items · View cart</Text>
+        <View style={styles.chevronBox}>
+          <FabChevronIcon size={20} color={ds.surface} />
         </View>
-        <Text style={styles.count}>{cartCount} items in cart</Text>
-      </View>
-      <Pressable onPress={onPreview} style={styles.previewButton}>
-        <Text style={styles.previewText}>Preview</Text>
-      </Pressable>
-      <Pressable onPress={onCheckout} style={styles.checkoutButton}>
-        <Text style={styles.checkoutText}>Checkout</Text>
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bar: {
+  wrap: {
     position: 'absolute',
     left: 0,
     right: 0,
-    zIndex: 15,
-    backgroundColor: colors.white,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderGray,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    zIndex: 20,
+    alignItems: 'center',
+  },
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: dsSpacing.sm,
+    height: 44,
+    paddingLeft: dsSpacing.lg,
+    paddingRight: 4,
+    borderRadius: dsRadii.pill,
+    backgroundColor: ds.primaryStrong,
+    boxShadow: '0 4px 16px rgba(12,71,51,.24)',
   },
-  info: { flex: 1, minWidth: 0 },
-  totalRow: { flexDirection: 'row', alignItems: 'baseline', gap: 7 },
-  total: { fontFamily: fontFamily[700], fontSize: 18, color: colors.charcoal, letterSpacing: -0.2 },
-  mrp: { fontFamily: fontFamily[400], fontSize: 11.5, color: '#9A9A98', textDecorationLine: 'line-through' },
-  count: { fontFamily: fontFamily[400], fontSize: 11, color: colors.bodyGray, marginTop: 2 },
-  previewButton: {
-    flexShrink: 0,
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1.6,
-    borderColor: colors.brandGreen,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  previewText: { fontFamily: fontFamily[600], fontSize: 13, color: colors.brandGreen },
-  checkoutButton: {
-    flexShrink: 0,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: colors.brandGreen,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  checkoutText: { fontFamily: fontFamily[600], fontSize: 13, color: colors.white },
+  label: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
+  chevronBox: { flexShrink: 0, width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
 });

@@ -1,23 +1,27 @@
 import { products } from './products';
-import { decorateProduct, discountBadge } from './decorateProduct';
+import { decorateProduct, discountBadge, marginOf, reviewCountOf } from './decorateProduct';
 import { money } from '@/utils/money';
 import type { CartState, Product } from './types';
 import type { RailProduct } from './home-content';
 
-function decorate(p: Product, cart: CartState, loggedIn: boolean, rating: string, margin: string): RailProduct {
+// Ported verbatim from the new AyurvedaOne design system's `deco(p)` (Various Mobile App - Phone.dc.html
+// line 2583) — `similarProducts`/`alsoBought` only override `rating` per-index (line 3030/3033); margin
+// and reviewCount are left as `deco()`'s own real formulas, unlike the old design which hardcoded a
+// static margin array here. `discount` still uses the shared `discountBadge` helper (identical math).
+function decorate(p: Product, cart: CartState, loggedIn: boolean, rating: string): RailProduct {
   return {
     ...decorateProduct(p, cart[p.id] || 0, loggedIn),
     rating,
-    margin,
+    margin: marginOf(p.id) + '%',
+    reviewCount: reviewCountOf(p.id),
     brandUpper: p.brand.toUpperCase(),
     discount: discountBadge(p),
   };
 }
 
 const SIMILAR_RATINGS = ['4.6', '4.7', '4.5', '4.8'];
-const SIMILAR_MARGINS = ['18%', '21%', '16%', '23%'];
 
-// Ported verbatim from the source's `similarProducts` (line 2199):
+// Ported verbatim from the source's `similarProducts` (line 3029):
 // `P.filter(x=>x.cat===p.cat&&x.id!==p.id).concat(P.filter(x=>x.id!==p.id)).slice(0,4)`. The second
 // filter is NOT deduped against the first, so when a product's category has fewer than 3 other
 // members, the same-category product(s) can appear a second time within the first 4 results (e.g.
@@ -27,13 +31,12 @@ export function getSimilarProducts(product: Product, cart: CartState, loggedIn: 
   const sameCat = products.filter((x) => x.cat === product.cat && x.id !== product.id);
   const allExceptSelf = products.filter((x) => x.id !== product.id);
   const combined = sameCat.concat(allExceptSelf).slice(0, 4);
-  return combined.map((p, i) => decorate(p, cart, loggedIn, SIMILAR_RATINGS[i], SIMILAR_MARGINS[i]));
+  return combined.map((p, i) => decorate(p, cart, loggedIn, SIMILAR_RATINGS[i]));
 }
 
 const ALSO_BOUGHT_RATINGS = ['4.4', '4.6', '4.9', '4.5'];
-const ALSO_BOUGHT_MARGINS = ['20%', '15%', '24%', '19%'];
 
-// Ported verbatim from the source's `alsoBought` (line 2202): last 4 products (excluding this one),
+// Ported verbatim from the source's `alsoBought` (line 3032): last 4 products (excluding this one),
 // reversed — no dedupe issue here since there's only ever one instance of each id in `products`.
 export function getAlsoBought(product: Product, cart: CartState, loggedIn: boolean): RailProduct[] {
   const reversed = products
@@ -41,21 +44,33 @@ export function getAlsoBought(product: Product, cart: CartState, loggedIn: boole
     .slice()
     .reverse()
     .slice(0, 4);
-  return reversed.map((p, i) => decorate(p, cart, loggedIn, ALSO_BOUGHT_RATINGS[i], ALSO_BOUGHT_MARGINS[i]));
+  return reversed.map((p, i) => decorate(p, cart, loggedIn, ALSO_BOUGHT_RATINGS[i]));
 }
 
-// Ported verbatim (line 2210): 2-tier bulk pricing, identical formula for every product — the second
-// tier is always exactly 5% off the unit price, never derived from the product's own `cmp`.
-export function bulkTiersFor(product: Product): { label: string; price: string; off: string }[] {
+// Ported verbatim from the new design's `bulkTiers` (line 3045) — 3-tier pricing using the shared
+// `BULK` multiplier (0.94), the first row highlighted in `primarySoft`/`primaryInk`, the rest plain.
+// Distinct from the old design's 2-tier "5% off" table this replaces.
+const BULK = 0.94;
+export function bulkTiersFor(product: Product): { label: string; price: string; rowBg: string; labelColor: string }[] {
   const base = product.price || 12;
   return [
-    { label: '1–2 units', price: money(base), off: '' },
-    { label: '3+ units', price: money(base * 0.95), off: '5% off' },
+    { label: '1 - 9 units', price: money(base) + '/unit', rowBg: '#DCF5E9', labelColor: '#0C4733' },
+    { label: '10 - 24 units', price: money(base * BULK) + '/unit', rowBg: '#FFFFFF', labelColor: '#586360' },
+    { label: '25+ units', price: money(base * BULK * 0.945) + '/unit', rowBg: '#FFFFFF', labelColor: '#586360' },
   ];
 }
 
-// Ported verbatim (line 2212) — same hardcoded margin for every product, not derived per-product.
-export const productMargin = '5%';
+// Ported verbatim from `productSpecs` (line 3044) — same fixed Form/Shelf life/Licence for every
+// product, only Brand/Pack size come from the real product record.
+export function productSpecsFor(product: Product): { k: string; v: string }[] {
+  return [
+    { k: 'Brand', v: product.brand },
+    { k: 'Pack size', v: product.cs },
+    { k: 'Form', v: 'Churna' },
+    { k: 'Shelf life', v: '24 months' },
+    { k: 'Licence', v: 'AYUSH licensed' },
+  ];
+}
 
 // Ported verbatim (line 2205) — templated with the product's own name, otherwise identical copy for
 // every product.

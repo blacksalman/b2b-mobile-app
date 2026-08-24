@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TabBar } from '@/components/shell/TabBar';
 import { Toast } from '@/components/shell/Toast';
 import { MiniCartFab } from '@/components/shell/MiniCartFab';
-import { MiniCartSheet } from '@/components/shell/MiniCartSheet';
 import { useAppState } from '@/state/AppStateContext';
 
 // All source screens are siblings under this one real `<Tabs/>` navigator (see plan's "Tab Bar Must
@@ -22,29 +22,37 @@ import { useAppState } from '@/state/AppStateContext';
 // navigator's type isn't 'stack' (verified at
 // node_modules/expo-router/build/global-state/routing.js:232), so nothing else needed to change.
 
-// Ported verbatim from `showMiniCartFab` (source line 2262):
+// Ported verbatim from `showMiniCartFab` (various-mobile-app-phone.dc.html line ~3110):
 // `['home','categories','listing','category','product'].includes(S)` — 'category' has no RN
 // equivalent since Category/Brand were merged into Listing in an earlier sync, so it's dropped here.
 function isMiniCartScreen(pathname: string): boolean {
   return pathname === '/' || pathname === '/categories' || pathname === '/listing' || pathname.startsWith('/product/');
 }
 
+// The Product Detail screen (not its Reviews sub-route) renders its own screen-local sticky
+// "Add to Cart" footer (`addBar` in `product/[id].tsx`) above the always-visible TabBar — a fixed
+// height of paddingTop(12) + content(48) + paddingBottom(12) + border(1) = 73, plus that bar's own
+// `insets.bottom` padding. The floating mini-cart pill below needs to clear that bar too, not just
+// the TabBar, or it renders underneath it.
+const PRODUCT_ADD_BAR_HEIGHT = 73;
+function isProductDetailScreen(pathname: string): boolean {
+  return pathname.startsWith('/product/') && !pathname.endsWith('/reviews');
+}
+
 export default function TabsLayout() {
   const router = useRouter();
   const pathname = usePathname();
+  const insets = useSafeAreaInsets();
   const { cartTotals } = useAppState();
   const [tabBarHeight, setTabBarHeight] = useState(80);
   const [fabHeight, setFabHeight] = useState(0);
-  const [miniCartOpen, setMiniCartOpen] = useState(false);
 
   const onTabBarLayout = (e: LayoutChangeEvent) => setTabBarHeight(e.nativeEvent.layout.height);
   const onFabLayout = (e: LayoutChangeEvent) => setFabHeight(e.nativeEvent.layout.height);
 
-  const showFab = cartTotals.cartHasItems && !miniCartOpen && isMiniCartScreen(pathname);
-  const goCheckout = () => {
-    setMiniCartOpen(false);
-    router.push('/checkout');
-  };
+  const showFab = cartTotals.cartHasItems && isMiniCartScreen(pathname);
+  const fabBottomOffset = tabBarHeight + (isProductDetailScreen(pathname) ? PRODUCT_ADD_BAR_HEIGHT + insets.bottom : 0);
+  const goCart = () => router.push('/cart');
 
   return (
     <Tabs
@@ -52,10 +60,7 @@ export default function TabsLayout() {
       tabBar={() => (
         <View style={styles.tabBarWrap}>
           <Toast bottomOffset={tabBarHeight + (showFab ? fabHeight + 20 : 12)} />
-          {showFab && (
-            <MiniCartFab bottomOffset={tabBarHeight} onLayout={onFabLayout} onPreview={() => setMiniCartOpen(true)} onCheckout={goCheckout} />
-          )}
-          <MiniCartSheet visible={miniCartOpen} onClose={() => setMiniCartOpen(false)} onCheckout={goCheckout} />
+          {showFab && <MiniCartFab bottomOffset={fabBottomOffset} onLayout={onFabLayout} onPress={goCart} />}
           <View onLayout={onTabBarLayout}>
             <TabBar />
           </View>
@@ -73,6 +78,14 @@ export default function TabsLayout() {
       <Tabs.Screen name="product/[id]/reviews" />
       <Tabs.Screen name="stores" />
       <Tabs.Screen name="tracking" />
+      <Tabs.Screen name="addresses" />
+      <Tabs.Screen name="edit-profile" />
+      <Tabs.Screen name="orders/index" />
+      <Tabs.Screen name="orders/[id]" />
+      <Tabs.Screen name="order-confirmed" />
+      <Tabs.Screen name="auth/phone" />
+      <Tabs.Screen name="auth/otp" />
+      <Tabs.Screen name="auth/register" />
     </Tabs>
   );
 }

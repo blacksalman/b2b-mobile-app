@@ -1,0 +1,169 @@
+import React from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ds, dsFontFamily, dsRadii, dsElevation } from '@/theme';
+import type { RailProduct } from '@/data/home-content';
+import { CartIcon, TrashIcon } from '@/icons';
+
+interface DsProductCardProps {
+  product: RailProduct & { hasOffer?: boolean; noOffer?: boolean; selectOption?: boolean };
+  width?: number | `${number}%`; // fixed width for rail cards; '48%' for a 2-col grid; omitted = flex:1
+  onOpen: () => void;
+  onAdd: () => void;
+  onInc: () => void;
+  onDec: () => void;
+  onLogin: () => void;
+  // Categories screen only (source line 2951/98-100): exactly one product (id 2, Ashwagandha
+  // Capsules) shows an outlined "Select option" button instead of the normal stepper/Add, opening the
+  // variant-pack sheet. Omitted on every other screen's cards, where `product.selectOption` is never set.
+  onSelectOption?: () => void;
+}
+
+// Rebuilt against the new AyurvedaOne design system's product card (repeated verbatim across every
+// rail/grid in Various Mobile App - Phone.dc.html — buyAgain/featured/bestSellers/newArrivals/
+// concerns/search-results all share this exact markup). Distinct from the old `ProductCard.tsx`
+// (untouched, still used by Categories/Listing/Product's similar-products rail — none of those are
+// rebuilt yet): the new card drops the old design's top-left "times ordered"/rank/"New" badge
+// overlays entirely (not present anywhere in the new markup) and always shows a margin chip instead.
+// `noOffer` (Featured rail only) hides the struck compare-at price — every other rail always shows it.
+export const DsProductCard = React.memo(function DsProductCard({ product: p, width, onOpen, onAdd, onInc, onDec, onLogin, onSelectOption }: DsProductCardProps) {
+  const showCompare = !p.noOffer;
+
+  return (
+    <View style={[styles.card, width ? { width } : styles.flexCard]}>
+      <Pressable onPress={onOpen} style={styles.imageWrap}>
+        <Text style={styles.marginChip}>{p.margin} margin</Text>
+      </Pressable>
+      <View style={styles.body}>
+        <Pressable onPress={onOpen}>
+          <Text style={styles.name} numberOfLines={2}>{p.name}</Text>
+        </Pressable>
+        <Text style={styles.brand} numberOfLines={1}>{p.brand}</Text>
+        <View style={styles.ratingRow}>
+          <Text style={styles.star}>★</Text>
+          <Text style={styles.ratingValue}>{p.rating}</Text>
+          <Text style={styles.reviewCount}>({p.reviewCount})</Text>
+        </View>
+        {p.showPrice && (
+          <View style={styles.priceBlock}>
+            <View style={styles.priceRow}>
+              <Text style={styles.price}>{p.priceLabel}</Text>
+              {showCompare && <Text style={styles.compare}>{p.compareLabel}</Text>}
+            </View>
+            {p.selectOption ? (
+              <Pressable onPress={onSelectOption} style={styles.selectOptionButton}>
+                <Text style={styles.selectOptionText}>Select option</Text>
+              </Pressable>
+            ) : p.inCart ? (
+              <View style={styles.stepper}>
+                <Pressable onPress={onDec} style={styles.stepperBtn} hitSlop={4}>
+                  {p.cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
+                </Pressable>
+                <Text style={styles.stepperQty}>{p.cartQty}</Text>
+                <Pressable onPress={onInc} style={styles.stepperBtn} hitSlop={4}>
+                  <Text style={styles.stepperGlyph}>+</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable onPress={onAdd} style={styles.addButton}>
+                <CartIcon size={14} color={ds.surface} />
+                <Text style={styles.addButtonText}>Add</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+        {p.gated && (
+          <Pressable onPress={onLogin} style={styles.gatedButton}>
+            <Text style={styles.gatedButtonText}>Log in for price</Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+});
+
+const styles = StyleSheet.create({
+  card: {
+    flexShrink: 0,
+    backgroundColor: ds.surface,
+    borderWidth: 1,
+    borderColor: ds.line,
+    borderRadius: dsRadii.button,
+    overflow: 'hidden',
+    ...dsElevation.e1,
+  },
+  flexCard: { flex: 1, minWidth: 0 },
+  imageWrap: {
+    aspectRatio: 4 / 3,
+    backgroundColor: ds.primarySoft,
+  },
+  marginChip: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    fontFamily: dsFontFamily[600],
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.22,
+    backgroundColor: ds.surface,
+    color: ds.primaryInk,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: dsRadii.chip,
+    overflow: 'hidden',
+  },
+  body: { padding: 12, flex: 1 },
+  name: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
+  brand: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
+  star: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.star },
+  ratingValue: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22, color: ds.ink },
+  reviewCount: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3 },
+  priceBlock: { marginTop: 'auto', paddingTop: 8 },
+  priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  price: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.primaryInk },
+  compare: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, textDecorationLine: 'line-through' },
+  stepper: {
+    marginTop: 12,
+    height: 40,
+    borderRadius: dsRadii.button,
+    backgroundColor: ds.primarySoft,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+  },
+  stepperBtn: { width: 34, height: 40, alignItems: 'center', justifyContent: 'center' },
+  stepperGlyph: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk },
+  stepperQty: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk },
+  addButton: {
+    marginTop: 12,
+    height: 40,
+    borderRadius: dsRadii.button,
+    backgroundColor: ds.primaryStrong,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  addButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
+  selectOptionButton: {
+    marginTop: 12,
+    height: 40,
+    borderRadius: dsRadii.button,
+    borderWidth: 1.5,
+    borderColor: ds.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectOptionText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk },
+  gatedButton: {
+    marginTop: 12,
+    height: 40,
+    borderRadius: dsRadii.button,
+    borderWidth: 1.5,
+    borderColor: ds.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gatedButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk },
+});
