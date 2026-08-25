@@ -116,6 +116,27 @@ export async function fetchCurrentCustomer(): Promise<MedusaCustomer | null> {
   }
 }
 
+export interface UpdateCustomerInput {
+  first_name?: string;
+  last_name?: string | null;
+  phone?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+// POST /store/customers/me - native, updates whatever fields are passed for the customer the
+// current token belongs to. Backs Edit Profile (edit-profile.tsx) - previously that screen only
+// ever edited/saved a local mock profile with no real backend write at all.
+//
+// Deliberately has no `email` field - confirmed live (400 "Unrecognized fields: 'email'") and in
+// source (@medusajs/medusa's StoreUpdateCustomer validator, distinct from StoreCreateCustomer)
+// that this endpoint does not accept it at all; only account creation does. Edit Profile's own
+// email field is read-only for the same reason - it would otherwise look editable while silently
+// never actually saving.
+export async function updateCustomer(input: UpdateCustomerInput): Promise<MedusaCustomer> {
+  const data = await storeMutate<{ customer: MedusaCustomer }>('/store/customers/me', 'POST', input as Record<string, unknown>);
+  return data.customer;
+}
+
 export async function logout(): Promise<void> {
   await clearToken();
 }

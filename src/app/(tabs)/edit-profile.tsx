@@ -1,57 +1,68 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CheckThinIcon, SmallBackChevronIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
-import { accountProfile } from '@/data/account-content';
+import { updateCustomer } from '@/lib/medusaAuth';
+import { toE164 } from '@/lib/phoneFormat';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, the
-// `isEditProfile` block, screen_EditProfile.html — that markup slice sat fully in range, read
-// directly). First build — Account's profile-row edit-pencil button previously linked to a
-// `StubScreen` placeholder.
+// `isEditProfile` block, screen_EditProfile.html) - same layout as the original mock build, now
+// backed by the real /store/customers/me (native, confirmed live: GET+POST both present, POST
+// accepts first_name/last_name/email/phone/metadata) instead of a local-only mock profile that
+// never wrote back to Account's own displayed name/phone at all.
 //
-// Unlike the Addresses round, this screen's DCLogic (`editName`/`editEmail`/`editPhone`,
-// `businessTypes`, `saveProfile`) sits PAST the project's 256KB `get_file` cap (the source file is
-// confirmed truncated at exactly line 3143, right after `otpDigits` — re-confirmed here, a fresh
-// pull reproduces the identical cutoff, so nothing further was fetched). Handled the same way the
-// Account round did: ground inferences in adjacent in-range evidence rather than invent freely.
-//   - `editName`/`editPhone` seed from `accountProfile` (source-grounded via the Account round's own
-//     evidence chain: ORDERS' repeated delivery contact + `saveAddress`'s default form).
-//   - `editEmail` seeds empty — no email is attached to `profile` anywhere in-range; the only visible
-//     `email` field in the initial state seed (source line 2534: `email:'', password:''`) is the
-//     separate login-form field and is itself empty by default, which is the closest evidence for
-//     what an unset email should look like here.
-//   - `businessTypes` (2 entries, `hint-placeholder-count="2"`) inferred as Pharmacy/Clinic — the only
-//     two venue types this app's mock world actually uses, matching `ADDRESS_SEED`'s two labels
-//     ("Sunrise Pharmacy", "Wellness Clinic") exactly. Default selection (Pharmacy) is a plain
-//     first-item default, not source-derived.
-//   - Selected/unselected radio-dot colors mirror the Addresses screen's own selected-address radio
-//     (primary border + primaryStrong fill when on, primary border only when off) — that pattern was
-//     read directly from in-range source on this same screen family, so reusing it here for an
-//     analogous control is grounded, not invented from scratch.
-//
-// `saveProfile` itself is unreachable past the cap, so its real behavior can't be confirmed. Built as
-// "save locally, flash a confirmation, return to Account" — the most faithful guess for a
-// single-action save button — but this does NOT write back to Account's displayed name/phone: those
-// come from the static `accountProfile` export, and making the two screens share live profile state
-// would mean touching `account.tsx`, which is out of scope for an Edit-Profile-only round. Flagged
-// here rather than faked.
+// Business type has no dedicated real field - it's stored the same place registration
+// (auth/register.tsx's completeRegistration) already writes it, customer.metadata.business_type -
+// so this screen reads/writes that same key rather than inventing a new one.
 export default function EditProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { flash } = useAppState();
+  const { flash, customer, login } = useAppState();
 
-  const [editName, setEditName] = useState(accountProfile.name);
-  const [editEmail, setEditEmail] = useState('');
-  const [editPhone, setEditPhone] = useState(accountProfile.phone);
-  const [bizType, setBizType] = useState<(typeof BUSINESS_TYPES)[number]>(BUSINESS_TYPES[0]);
+  const [editName, setEditName] = useState([customer?.first_name, customer?.last_name].filter(Boolean).join(' '));
+  const [editEmail, setEditEmail] = useState(customer?.email ?? '');
+  // Local 10-digit part only - the real phone (customer.phone, toE164-formatted, e.g.
+  // "+917068039016") always carries the "+91" prefix, same format auth/phone.tsx writes it in
+  // and the only format this backend ever stores it in for a real Indian customer.
+  const [editPhone, setEditPhone] = useState((customer?.phone ?? '').replace(/^\+91/, ''));
+  const onEditPhone = (v: string) => setEditPhone(v.replace(/\D/g, '').slice(0, 10));
+  const [bizType, setBizType] = useState<(typeof BUSINESS_TYPES)[number]>(
+    (customer?.metadata?.business_type as (typeof BUSINESS_TYPES)[number] | undefined) ?? BUSINESS_TYPES[0]
+  );
+  const [saving, setSaving] = useState(false);
+
+  const initials = [customer?.first_name?.[0], customer?.last_name?.[0]].filter(Boolean).join('').toUpperCase() || 'A';
 
   const goAccount = () => router.push('/account');
-  const saveProfile = () => {
-    flash('Profile updated');
-    goAccount();
+  const saveProfile = async () => {
+    if (saving) return;
+    // Same 10-digit Indian mobile pattern auth/phone.tsx enforces before ever sending an OTP -
+    // a real Indian mobile number is exactly 10 digits starting 6-9 (landline/other prefixes
+    // aren't valid OTP-auth numbers on this backend either).
+    if (!/^[6-9]\d{9}$/.test(editPhone)) {
+      flash('Enter a valid 10-digit mobile number');
+      return;
+    }
+    setSaving(true);
+    const [firstName, ...rest] = editName.trim().split(/\s+/).filter(Boolean);
+    try {
+      const updated = await updateCustomer({
+        first_name: firstName || editName.trim(),
+        last_name: rest.join(' ') || null,
+        phone: toE164(editPhone),
+        metadata: { ...(customer?.metadata ?? {}), business_type: bizType },
+      });
+      login(updated);
+      flash('Profile updated');
+      goAccount();
+    } catch {
+      flash('Could not update your profile');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -66,14 +77,32 @@ export default function EditProfileScreen() {
       <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
         <View style={styles.avatarRow}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{accountProfile.initials}</Text>
+            <Text style={styles.avatarText}>{initials}</Text>
           </View>
         </View>
 
         <View style={styles.card}>
           <Field label="Full name" value={editName} onChangeText={setEditName} placeholder="Full name" />
-          <Field label="Email address" value={editEmail} onChangeText={setEditEmail} placeholder="Email address" style={styles.fieldSpaced} />
-          <Field label="Phone number" value={editPhone} onChangeText={setEditPhone} placeholder="Phone number" style={styles.fieldSpaced} keyboardType="phone-pad" />
+          {/* Read-only: confirmed live and in Medusa's own source that /store/customers/me's
+              update validator (StoreUpdateCustomer) has no email field at all, unlike account
+              creation - editable here would look like a real field that silently never saves. */}
+          <Field label="Email address" value={editEmail} onChangeText={setEditEmail} placeholder="Email address" style={styles.fieldSpaced} keyboardType="email-address" editable={false} />
+          <View style={styles.fieldSpaced}>
+            <Text style={styles.fieldLabel}>Phone number</Text>
+            <View style={styles.phoneBox}>
+              <Text style={styles.phonePrefix}>+91</Text>
+              <View style={styles.phoneDivider} />
+              <TextInput
+                value={editPhone}
+                onChangeText={onEditPhone}
+                placeholder="10-digit mobile number"
+                placeholderTextColor={ds.ink3}
+                keyboardType="number-pad"
+                maxLength={10}
+                style={styles.input}
+              />
+            </View>
+          </View>
 
           <Text style={[styles.fieldLabel, styles.fieldSpaced]}>Business type</Text>
           <View style={styles.bizRow}>
@@ -91,8 +120,8 @@ export default function EditProfileScreen() {
           </View>
         </View>
 
-        <Pressable onPress={saveProfile} style={styles.saveButton}>
-          <Text style={styles.saveButtonText}>Save changes</Text>
+        <Pressable onPress={saveProfile} disabled={saving} style={[styles.saveButton, saving && styles.saveButtonDisabled]}>
+          {saving ? <ActivityIndicator color={ds.surface} /> : <Text style={styles.saveButtonText}>Save changes</Text>}
         </Pressable>
       </ScrollView>
     </View>
@@ -108,6 +137,7 @@ const Field = React.memo(function Field({
   placeholder,
   style,
   keyboardType,
+  editable = true,
 }: {
   label: string;
   value: string;
@@ -115,17 +145,19 @@ const Field = React.memo(function Field({
   placeholder: string;
   style?: object;
   keyboardType?: 'default' | 'phone-pad' | 'email-address';
+  editable?: boolean;
 }) {
   return (
     <View style={style}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={styles.inputBox}>
+      <View style={[styles.inputBox, !editable && styles.inputBoxDisabled]}>
         <TextInput
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
           placeholderTextColor={ds.ink3}
           keyboardType={keyboardType}
+          editable={editable}
           style={styles.input}
         />
       </View>
@@ -190,7 +222,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: dsSpacing.md,
   },
-  input: { ...dsType.body, padding: 0 },
+  inputBoxDisabled: { backgroundColor: ds.canvas },
+  input: { flex: 1, ...dsType.body, padding: 0 },
+  phoneBox: {
+    marginTop: dsSpacing.sm,
+    height: 48,
+    borderRadius: dsRadii.input,
+    borderWidth: 1,
+    borderColor: ds.lineStrong,
+    backgroundColor: ds.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: dsSpacing.sm,
+    paddingHorizontal: dsSpacing.md,
+  },
+  phonePrefix: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
+  phoneDivider: { width: 1, height: 20, backgroundColor: ds.line },
 
   bizRow: { marginTop: dsSpacing.sm, flexDirection: 'row', gap: dsSpacing.sm },
   bizTile: {
@@ -223,5 +270,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  saveButtonDisabled: { opacity: 0.7 },
   saveButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
 });

@@ -59,17 +59,6 @@ export const POLICY_ROW_KEYS = [
   'Disclaimer',
 ] as const;
 
-// Inferred: the DCLogic defining `profile` itself is past the 256KB truncation point, but the source's
-// ORDERS mock data (in range, source line 2488-2499) repeats the same delivery contact on every order —
-// name 'Tom Sharma', phone '+91 96569 50687' — and `saveAddress`'s default add-address form (in range,
-// source line 2717-2718) seeds `addrName:'Tom'`, `addrPhone:'+91 9656950687'` (same person, formatting
-// difference only). Reused here rather than invented; initials computed from the name.
-export const accountProfile = {
-  name: 'Tom Sharma',
-  phone: '+91 96569 50687',
-  initials: 'TS',
-};
-
 // Resolved: `s.addresses` (various-mobile-app-phone.dc.html lines 2540-2543) is in range, not
 // truncated — read directly, not inferred. Two seeded addresses, both for the same contact ('Tom',
 // matching the profile phone above), at different pharmacy/clinic locations.
