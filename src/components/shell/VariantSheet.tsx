@@ -1,11 +1,19 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CartIcon, CloseIcon, TrashIcon } from '@/icons';
 import { money } from '@/utils/money';
+import { useAppState } from '@/state/AppStateContext';
+import { useApiCartActions } from '@/data/useApiCartActions';
+import { registerApiProductVariant } from '@/data/cartSync';
+import { hashProductId } from '@/data/idHash';
+import { decorateProduct } from '@/data/decorateProduct';
 import type { Product } from '@/data/types';
 
+// Unrelated to the real-variant sheet below - still backs product/[id].tsx's own mock pack-size
+// grid (the "×1 / Bulk carton ×6 / Trial pack" split shown for products with no real Medusa
+// variants at all), kept as-is/untouched by this file's real-variant popup rewrite.
 export interface VariantPack {
   key: string;
   label: string;
@@ -16,17 +24,6 @@ export interface VariantPack {
   margin: string;
 }
 
-// Ported verbatim from the new AyurvedaOne design system source's `variantPacks` (Various Mobile App -
-// Phone.dc.html, lines 2927-2939): 3 fixed packs per product — standard (×1, at the product's own
-// price/cmp), "Bulk carton × 6" (×6 the unit price with the same BULK=0.94 volume discount applied
-// storewide, priced against 6× the product's own MRP — genuinely discounted, unlike this file's
-// pre-redesign version which priced the bulk pack's "MRP" as 6× its own price so it could never show a
-// discount chip), and "Trial pack" (×0.4, discount derived from the product's own MRP). Margin uses the
-// exact same `marginOf(p)` formula as everywhere else in the new design (base, +3 for bulk, -5 for
-// trial) instead of hardcoded per-pack percentages. `label` is the bare pack description with no
-// product-name prefix — the sheet's header already shows the product name once. `base`/`mrp` fall back
-// to 12 / base*1.18 if the product has neither price nor cmp, matching the source exactly (never
-// happens with the current seed catalog, kept for parity).
 const BULK = 0.94;
 
 export function buildVariantPacks(product: Product): VariantPack[] {
@@ -43,29 +40,52 @@ export function buildVariantPacks(product: Product): VariantPack[] {
 interface VariantSheetProps {
   visible: boolean;
   product: Product | null;
-  variantCart: Record<string, number>;
   onClose: () => void;
-  onAdd: (pack: VariantPack) => void;
-  onInc: (pack: VariantPack) => void;
-  onDec: (pack: VariantPack) => void;
-  onGoCart: () => void;
 }
 
-// Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, the
-// `variantOpen` block, source lines 2221-2280) — the same bottom-sheet chrome pattern as
-// `FilterSheet.tsx` (grabber, `canvas` body, `surface` header, `e3`-equivalent shadow via
-// `border-radius:16px 16px 0 0`). Each pack renders as a row inside one bordered `e1` card, not
-// separate cards per pack. Note the source's own quirk, replicated as-is: the per-pack stepper tracks
-// its own small counter (`variantCart[key]`), but tapping +/-/Add ALSO nudges the MAIN product's cart
-// quantity by the pack's `mult` (so the "Bulk carton × 6" pack adds 6 to the main product's cart count
-// per tap, and "Trial pack" adds 0.4) — two independent numbers, not one. `onGoCart` is accepted for
-// prop-contract parity with the pre-redesign version but the new source's row markup has no
-// go-to-cart icon button (same removal already made to the Listing screen's cart row in an earlier
-// round) — kept as an unused prop rather than touching `categories.tsx`'s call site this round.
-export function VariantSheet({ visible, product, variantCart, onClose, onAdd, onInc, onDec }: VariantSheetProps) {
+// Real-variant popup for "Select option" (DsProductCard, whenever product.realVariants has more
+// than one entry) - opened from a grid/rail card so the customer can pick the actual variant
+// (e.g. Swarnaprashana's "0-1 Yr"/"1-5 Yrs"/...) and add it right there, instead of being
+// dumped onto the Product Detail page. Not to be confused with buildVariantPacks above (a
+// different, still-mock feature) - each row here is one of the product's genuine variants, same
+// price/cmp/inStock product.realVariants (homeApi.ts's buildRealVariantOptions) already carries,
+// already tax-inclusive and already labeled with the real per-option value (not the
+// product-name-prefixed variant.title).
+//
+// Each row is wired to the real cart exactly like the Product Detail page's own variant grid:
+// hashProductId(variant.id) is its own independent cart line/hashId (registerApiProductVariant),
+// so picking "1 - 5 Yrs" and "5 - 10 Yrs" for the same product are two separate cart entries, not
+// one - no separate local "variantCart" bookkeeping needed, this reads/writes the same real
+// AppStateContext cart every other Add/Inc/Dec in the app already uses.
+export function VariantSheet({ visible, product, onClose }: VariantSheetProps) {
   const insets = useSafeAreaInsets();
+  const { cart, loggedIn } = useAppState();
+  const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
+
+  const rows = useMemo(() => {
+    if (!product?.realVariants) return [];
+    return product.realVariants.map((v) => {
+      const id = hashProductId(v.id);
+      registerApiProductVariant(id, v.id);
+      const rowProduct: Product = {
+        id,
+        name: product.name,
+        brand: product.brand,
+        cs: v.title,
+        price: v.price,
+        cmp: v.cmp,
+        tint: product.tint,
+        cat: product.cat,
+        thumbnail: product.thumbnail,
+        medusaId: product.medusaId,
+        handle: product.handle,
+        inStock: v.inStock,
+      };
+      return decorateProduct(rowProduct, cart[id] ?? 0, loggedIn);
+    });
+  }, [product, cart, loggedIn]);
+
   if (!product) return null;
-  const packs = buildVariantPacks(product);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -78,7 +98,7 @@ export function VariantSheet({ visible, product, variantCart, onClose, onAdd, on
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={dsType.h2} numberOfLines={1}>{product.name}</Text>
-            <Text style={styles.subtitle}>Select a pack size</Text>
+            <Text style={styles.subtitle}>Select an option</Text>
           </View>
           <Pressable onPress={onClose} style={styles.closeButton} hitSlop={8}>
             <CloseIcon size={14} color={ds.ink} strokeWidth={2.2} />
@@ -87,41 +107,41 @@ export function VariantSheet({ visible, product, variantCart, onClose, onAdd, on
 
         <ScrollView style={styles.body} contentContainerStyle={[styles.bodyContent, { paddingBottom: dsSpacing.lg + insets.bottom }]}>
           <View style={styles.packsCard}>
-            {packs.map((pack, i) => {
-              const qty = variantCart[pack.key] || 0;
-              const inCart = qty > 0;
-              const hasDiscount = pack.mrpBase > pack.price;
+            {rows.map((row, i) => {
+              const outOfStock = row.inStock === false;
+              const hasDiscount = !!row.cmp && row.cmp > row.price;
               return (
-                <View key={pack.key} style={[styles.packRow, i === packs.length - 1 && styles.packRowLast]}>
+                <View key={row.id} style={[styles.packRow, i === rows.length - 1 && styles.packRowLast]}>
                   <View style={styles.packInfo}>
-                    <Text style={styles.packLabel} numberOfLines={1}>{pack.label}</Text>
+                    <Text style={styles.packLabel} numberOfLines={1}>{row.cs}</Text>
                     <View style={styles.priceRow}>
                       {hasDiscount ? (
                         <>
-                          <Text style={styles.priceGreen}>{money(pack.price)}</Text>
-                          <Text style={styles.mrpText}>{money(pack.mrpBase)}</Text>
+                          <Text style={styles.priceGreen}>{row.priceLabel}</Text>
+                          <Text style={styles.mrpText}>{row.compareLabel}</Text>
                         </>
                       ) : (
-                        <Text style={styles.priceDark}>{money(pack.price)}</Text>
+                        <Text style={styles.priceDark}>{row.priceLabel}</Text>
                       )}
-                    </View>
-                    <View style={styles.marginChip}>
-                      <Text style={styles.marginText}>{pack.margin} margin</Text>
                     </View>
                   </View>
 
-                  {inCart ? (
+                  {outOfStock ? (
+                    <View style={styles.outOfStockButton}>
+                      <Text style={styles.outOfStockButtonText}>Out of stock</Text>
+                    </View>
+                  ) : row.cartQty > 0 ? (
                     <View style={styles.stepper}>
-                      <Pressable onPress={() => onDec(pack)} style={styles.stepperBtn} hitSlop={4}>
-                        {qty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
+                      <Pressable onPress={() => decApiProduct(row)} style={styles.stepperBtn} hitSlop={4}>
+                        {row.cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
                       </Pressable>
-                      <Text style={styles.stepperQty}>{qty}</Text>
-                      <Pressable onPress={() => onInc(pack)} style={styles.stepperBtn} hitSlop={4}>
+                      <Text style={styles.stepperQty}>{row.cartQty}</Text>
+                      <Pressable onPress={() => incApiProduct(row)} style={styles.stepperBtn} hitSlop={4}>
                         <Text style={styles.stepperGlyph}>+</Text>
                       </Pressable>
                     </View>
                   ) : (
-                    <Pressable onPress={() => onAdd(pack)} style={styles.addButton}>
+                    <Pressable onPress={() => addApiProduct(row)} style={styles.addButton}>
                       <CartIcon size={14} color={ds.surface} />
                       <Text style={styles.addButtonText}>Add</Text>
                     </Pressable>
@@ -205,15 +225,6 @@ const styles = StyleSheet.create({
   priceGreen: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.primaryInk, fontVariant: ['tabular-nums'] },
   priceDark: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.ink, fontVariant: ['tabular-nums'] },
   mrpText: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, textDecorationLine: 'line-through', fontVariant: ['tabular-nums'] },
-  marginChip: {
-    alignSelf: 'flex-start',
-    marginTop: dsSpacing.sm,
-    backgroundColor: ds.primarySoft,
-    borderRadius: dsRadii.chip,
-    paddingHorizontal: dsSpacing.sm,
-    paddingVertical: 4,
-  },
-  marginText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22, color: ds.primaryInk },
   stepper: {
     flexShrink: 0,
     flexDirection: 'row',
@@ -237,4 +248,15 @@ const styles = StyleSheet.create({
     gap: dsSpacing.sm,
   },
   addButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
+  outOfStockButton: {
+    flexShrink: 0,
+    height: 40,
+    paddingHorizontal: dsSpacing.md,
+    borderRadius: dsRadii.button,
+    borderWidth: 1,
+    borderColor: ds.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  outOfStockButtonText: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.ink3 },
 });

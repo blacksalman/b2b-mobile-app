@@ -21,7 +21,7 @@ import {
   TrashIcon,
 } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
-import { buildVariantPacks } from '@/components/shell/VariantSheet';
+import { buildVariantPacks, VariantSheet } from '@/components/shell/VariantSheet';
 import { productById } from '@/data/products';
 import {
   brandAbout,
@@ -54,17 +54,28 @@ import type { RailProduct } from '@/data/home-content';
 // followed by a letter, not an actual line break - confirmed by inspecting the raw API
 // response) inside the HTML, which is why a plain whitespace-collapse alone left visible "\n\n"
 // in the rendered text; those literal escape sequences need stripping same as the HTML tags do.
+//
+// Block-level tags are converted to real line breaks BEFORE the rest are stripped, so a plain
+// <Text> (which does render \n) still shows paragraphs/headings/list items on their own lines
+// instead of one unbroken run-on paragraph - confirmed live that's what a naive strip-everything
+// pass produced for this store's real descriptions (headings running straight into body copy,
+// "✔" bullets back-to-back with no separation).
 function stripHtml(html: string): string {
   return html
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\\r\\n|\\n|\\r/g, ' ')
+    .replace(/\\r\\n|\\n|\\r/g, '\n')
+    .replace(/<li[^>]*>/gi, '\n• ')
+    .replace(/<\/(p|div|h[1-6]|li)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#0?39;/g, "'")
-    .replace(/\s+/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -135,6 +146,7 @@ export default function ProductScreen() {
   // cheapest variant" (activeVariantProduct below falls back to that, same as every other real
   // product's card already does).
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const [variantSheetProduct, setVariantSheetProduct] = useState<Product | null>(null);
 
   const similarProducts: RailProduct[] = useMemo(() => {
     if (!product) return [];
@@ -613,6 +625,7 @@ export default function ProductScreen() {
                   onInc={() => railOnInc(p)}
                   onDec={() => railOnDec(p)}
                   onLogin={goAccount}
+                  onSelectOption={() => setVariantSheetProduct(p)}
                 />
               ))}
             </ScrollView>
@@ -636,6 +649,7 @@ export default function ProductScreen() {
                   onInc={() => railOnInc(p)}
                   onDec={() => railOnDec(p)}
                   onLogin={goAccount}
+                  onSelectOption={() => setVariantSheetProduct(p)}
                 />
               ))}
             </ScrollView>
@@ -755,6 +769,8 @@ export default function ProductScreen() {
           </View>
         </View>
       )}
+
+      <VariantSheet visible={!!variantSheetProduct} product={variantSheetProduct} onClose={() => setVariantSheetProduct(null)} />
     </View>
   );
 }

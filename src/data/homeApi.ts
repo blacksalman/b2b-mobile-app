@@ -242,9 +242,14 @@ function buildRealVariantOptions(mp: MedusaProduct): NonNullable<Product['realVa
   return (mp.variants ?? []).map((v) => {
     const price = v.calculated_price?.calculated_amount ?? 0;
     const original = v.calculated_price?.original_amount ?? price;
+    // Real option value(s) (e.g. "1 - 5 Yrs") - not v.title, which re-concatenates the whole
+    // product name for this store's variants (e.g. "Swarnaprashana - Ayurveda One - 1 - 5 Yrs"),
+    // unreadable as a short picker label. Falls back to v.title on the rare variant with no
+    // options data at all, rather than showing a blank card.
+    const label = v.options?.length ? v.options.map((o) => o.value).join(' / ') : v.title;
     return {
       id: v.id,
-      title: v.title,
+      title: label,
       price: price * taxMult,
       cmp: original > price ? original * taxMult : undefined,
       inStock: isVariantInStock(v),

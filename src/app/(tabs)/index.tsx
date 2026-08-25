@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -6,6 +6,7 @@ import { ds, dsFontFamily, dsRadii, dsSpacing, dsElevation } from '@/theme';
 import { Header } from '@/components/shell/Header';
 import { DsSectionHeader } from '@/components/ds/DsSectionHeader';
 import { DsProductCard } from '@/components/ds/DsProductCard';
+import { VariantSheet } from '@/components/shell/VariantSheet';
 import { MarginTrendIcon, DeliveryBoxIcon, ShieldCheckIcon, ChevronRightIcon, ConcernLeafIcon, CartIcon, TrashIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import {
@@ -17,6 +18,7 @@ import { useHomeApiData, toRailProduct, type ApiCategoryTile, type ApiBrand } fr
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { useBuyAgainProducts } from '@/data/ordersApi';
 import { productHref } from '@/data/idHash';
+import type { Product } from '@/data/types';
 
 // Thousands-separator formatting for the real catalog product/category counts - plain regex
 // rather than toLocaleString, since Intl number formatting isn't guaranteed available on every
@@ -77,6 +79,7 @@ export default function HomeScreen() {
   // Every real rail on this screen (Best sellers/New arrivals/Featured/Fast-moving/Concern
   // shelves/Buy again) shares these - see useApiCartActions for the real-cart-sync behavior.
   const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
+  const [variantSheetProduct, setVariantSheetProduct] = useState<Product | null>(null);
   const goLogin = () => router.push('/account');
   const goCategories = () => router.push('/categories');
   // Categories is a persistent tab screen, not a fresh page each time - passing categoryId as a
@@ -262,6 +265,7 @@ export default function HomeScreen() {
                   onInc={() => incApiProduct(p)}
                   onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
+                  onSelectOption={() => setVariantSheetProduct(p)}
                 />
               ))}
             </ScrollView>
@@ -311,6 +315,7 @@ export default function HomeScreen() {
                   onInc={() => incApiProduct(p)}
                   onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
+                  onSelectOption={() => setVariantSheetProduct(p)}
                 />
               ))}
             </ScrollView>
@@ -338,6 +343,7 @@ export default function HomeScreen() {
                   onInc={() => incApiProduct(p)}
                   onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
+                  onSelectOption={() => setVariantSheetProduct(p)}
                 />
               ))}
             </ScrollView>
@@ -376,6 +382,7 @@ export default function HomeScreen() {
                   onInc={() => incApiProduct(p)}
                   onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
+                  onSelectOption={() => setVariantSheetProduct(p)}
                 />
               ))}
             </ScrollView>
@@ -410,6 +417,7 @@ export default function HomeScreen() {
                   onInc={() => incApiProduct(p)}
                   onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
+                  onSelectOption={() => setVariantSheetProduct(p)}
                 />
               ))}
             </ScrollView>
@@ -466,6 +474,8 @@ export default function HomeScreen() {
           ))}
         </ScrollView>
       </ScrollView>
+
+      <VariantSheet visible={!!variantSheetProduct} product={variantSheetProduct} onClose={() => setVariantSheetProduct(null)} />
     </View>
   );
 }

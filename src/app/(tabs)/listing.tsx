@@ -7,6 +7,7 @@ import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CloseIcon, FilterIcon, SearchIcon, SmallBackChevronIcon } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
 import { FilterSheet } from '@/components/shell/FilterSheet';
+import { VariantSheet } from '@/components/shell/VariantSheet';
 import { getListingProducts } from '@/data/listing-content';
 import { useAppState } from '@/state/AppStateContext';
 import { productById } from '@/data/products';
@@ -14,6 +15,7 @@ import { useCategoryProducts } from '@/data/categoriesApi';
 import { toRailProduct } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { productHref } from '@/data/idHash';
+import type { Product } from '@/data/types';
 
 function addFlashLabel(name: string): string {
   return name.split(' ').slice(0, 2).join(' ') + ' added';
@@ -60,6 +62,7 @@ export default function ListingScreen() {
   } = useAppState();
 
   const [query, setQuery] = useState('');
+  const [variantSheetProduct, setVariantSheetProduct] = useState<Product | null>(null);
   const isReal = !!params.collectionId;
   const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
 
@@ -162,11 +165,14 @@ export default function ListingScreen() {
                 onInc={() => (isReal ? incApiProduct(p) : inc(p.id))}
                 onDec={() => (isReal ? decApiProduct(p) : dec(p.id))}
                 onLogin={goLogin}
+                onSelectOption={() => setVariantSheetProduct(p)}
               />
             ))}
           </View>
         )}
       </ScrollView>
+
+      <VariantSheet visible={!!variantSheetProduct} product={variantSheetProduct} onClose={() => setVariantSheetProduct(null)} />
 
       <FilterSheet
         visible={filterOpen}

@@ -6,12 +6,14 @@ import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CloseIcon, FilterIcon, PackageIcon, SearchIcon, SmallBackChevronIcon } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
 import { FilterSheet } from '@/components/shell/FilterSheet';
+import { VariantSheet } from '@/components/shell/VariantSheet';
 import { countNonSortFilters } from '@/data/categories-content';
 import { useAppState } from '@/state/AppStateContext';
 import { useProductCategories, useCategoryProducts, useCollections } from '@/data/categoriesApi';
 import { toRailProduct } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { productHref } from '@/data/idHash';
+import type { Product } from '@/data/types';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isCategories
 // block). Real-data version: the product grid, category rail, and search are all backed by the
@@ -50,6 +52,7 @@ export default function CategoriesScreen() {
 
   const [query, setQuery] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(params.categoryId ?? null);
+  const [variantSheetProduct, setVariantSheetProduct] = useState<Product | null>(null);
 
   useEffect(() => {
     setCategoryId(params.categoryId ?? null);
@@ -224,11 +227,14 @@ export default function CategoriesScreen() {
                 onInc={() => incApiProduct(p)}
                 onDec={() => decApiProduct(p)}
                 onLogin={goLogin}
+                onSelectOption={() => setVariantSheetProduct(p)}
               />
             ))}
           </View>
         )}
       </ScrollView>
+
+      <VariantSheet visible={!!variantSheetProduct} product={variantSheetProduct} onClose={() => setVariantSheetProduct(null)} />
 
       <FilterSheet
         visible={filterOpen}

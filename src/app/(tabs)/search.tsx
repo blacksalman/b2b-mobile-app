@@ -5,12 +5,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing } from '@/theme';
 import { BackChevronIcon, CloseIcon, SearchIcon, MicIcon } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
+import { VariantSheet } from '@/components/shell/VariantSheet';
 import { useAppState } from '@/state/AppStateContext';
 import { useProductSearch } from '@/data/searchApi';
 import { useRecentSearches } from '@/data/recentSearches';
 import { toRailProduct } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { productHref } from '@/data/idHash';
+import type { Product } from '@/data/types';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isSearch
 // block, line 750-833). Same fidelity note as the previous Search build: the source defines a
@@ -26,6 +28,7 @@ export default function SearchScreen() {
 
   const [query, setQuery] = useState('');
   const [listening] = useState(false);
+  const [variantSheetProduct, setVariantSheetProduct] = useState<Product | null>(null);
   const inputRef = useRef<TextInput>(null);
 
   // This is a persistent tab screen (Home's search bar navigates here, doesn't remount it), so
@@ -145,12 +148,15 @@ export default function SearchScreen() {
                   onInc={() => incApiProduct(p)}
                   onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
+                  onSelectOption={() => setVariantSheetProduct(p)}
                 />
               ))}
             </View>
           </>
         )}
       </ScrollView>
+
+      <VariantSheet visible={!!variantSheetProduct} product={variantSheetProduct} onClose={() => setVariantSheetProduct(null)} />
     </View>
   );
 }

@@ -148,6 +148,10 @@ export interface MedusaVariantInventoryItem {
 export interface MedusaVariant {
   id: string;
   title: string;
+  // Real per-option differentiator (e.g. "1 - 5 Yrs") - `title` above is Medusa's full variant
+  // title, which for a product like this re-concatenates the whole product name plus this same
+  // value (e.g. "Swarnaprashana - Ayurveda One - 1 - 5 Yrs"), unusable as a short picker label.
+  options?: { value: string }[];
   calculated_price?: MedusaVariantPrice;
   prices?: MedusaVariantPriceTier[];
   manage_inventory?: boolean;
@@ -183,6 +187,7 @@ const PRODUCT_FIELDS = [
   'type_id',
   'variants.id',
   'variants.title',
+  'variants.options.value',
   '*variants.calculated_price',
   'variants.prices.id',
   'variants.prices.amount',
