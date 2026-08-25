@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { fetchOrders, fetchProductsByIds, type MedusaProduct } from '@/lib/medusaClient';
+import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { fetchOrders, fetchOrder, fetchProductsByIds, type MedusaOrder, type MedusaProduct } from '@/lib/medusaClient';
 
 // Real "Buy again" data source (GET /store/orders, auto-scoped to the logged-in customer via the
 // bearer token - see authToken.ts). Deliberately re-fetches CURRENT product data (price, images,
@@ -75,4 +76,123 @@ export function useBuyAgainProducts(loggedIn: boolean): BuyAgainData {
   }, [loggedIn]);
 
   return data;
+}
+
+// Real "My Orders" data source (list + detail) - replaces the old orders-content.ts mock
+// (ORDERS/findOrder/ordersByStatus), which never touched the backend at all.
+export type OrderStatus = 'Confirmed' | 'In Transit' | 'Delivered' | 'Cancelled';
+export const ORDER_TAB_NAMES: OrderStatus[] = ['Confirmed', 'In Transit', 'Delivered', 'Cancelled'];
+
+// Same hex values the old mock used for Confirmed/In Transit/Delivered (ds.primaryInk/
+// ds.primarySoft, ds.warningInk/ds.warning) plus a matching danger-toned pair for the new
+// Cancelled bucket (ds.dangerInk-equivalent), kept as a lookup by name rather than importing the
+// theme here - this stays a pure data module, same convention orders-content.ts used.
+export const ORDER_STATUS_STYLE: Record<OrderStatus, { color: string; bg: string }> = {
+  Confirmed: { color: '#0C4733', bg: '#DCF5E9' },
+  'In Transit': { color: '#7F4F0C', bg: '#FCF1E0' },
+  Delivered: { color: '#0C4733', bg: '#DCF5E9' },
+  Cancelled: { color: '#B3261E', bg: '#FBE7E6' },
+};
+
+// Derived from `fulfillments` directly (shipped_at/delivered_at/canceled_at), NOT a
+// `fulfillment_status` field - confirmed in this backend's own source that field is unreliable
+// through the Store API's query mechanism (see MedusaOrder's own comment, medusaClient.ts).
+// order.status ('canceled') takes priority over fulfillment state - a canceled order shouldn't
+// read as "Confirmed" just because it has no active fulfillment.
+export function orderStatusFor(order: MedusaOrder): OrderStatus {
+  if (order.status === 'canceled') return 'Cancelled';
+  const active = order.fulfillments.filter((f) => !f.canceled_at);
+  if (active.some((f) => f.delivered_at)) return 'Delivered';
+  if (active.some((f) => f.shipped_at)) return 'In Transit';
+  return 'Confirmed';
+}
+
+export function orderItemCount(order: MedusaOrder): number {
+  return order.items.reduce((sum, item) => sum + item.quantity, 0);
+}
+
+// First active (non-canceled) fulfillment's dates - this app never splits an order across
+// multiple real shipments today, so "the" dispatch/delivery date is unambiguous; a
+// not-yet-fulfilled order simply has none yet.
+function activeFulfillment(order: MedusaOrder): MedusaOrder['fulfillments'][number] | undefined {
+  return order.fulfillments.find((f) => !f.canceled_at);
+}
+export function orderDispatchDate(order: MedusaOrder): string | null {
+  return activeFulfillment(order)?.shipped_at ?? null;
+}
+export function orderDeliveryDate(order: MedusaOrder): string | null {
+  return activeFulfillment(order)?.delivered_at ?? null;
+}
+
+export interface OrdersListData {
+  loading: boolean;
+  error: boolean;
+  orders: MedusaOrder[];
+}
+
+const ORDERS_LIST_LIMIT = 50;
+
+// Re-fetches every time the Orders screen regains focus, not just on first mount - same reasoning
+// as every other real-data list in this app (Cart, Categories, ...): a mount-only fetch would
+// keep showing whatever was true the first time this screen ever opened.
+export function useOrders(): OrdersListData {
+  const [data, setData] = useState<OrdersListData>({ loading: true, error: false, orders: [] });
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      setData((prev) => ({ ...prev, loading: true }));
+      fetchOrders({ limit: ORDERS_LIST_LIMIT })
+        .then(({ orders }) => {
+          if (cancelled) return;
+          const sorted = [...orders].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          setData({ loading: false, error: false, orders: sorted });
+        })
+        .catch(() => {
+          if (!cancelled) setData({ loading: false, error: true, orders: [] });
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
+
+  return data;
+}
+
+export interface OrderDetailData {
+  loading: boolean;
+  notFound: boolean;
+  order: MedusaOrder | null;
+}
+
+const EMPTY_ORDER_DETAIL: OrderDetailData = { loading: true, notFound: false, order: null };
+const NOT_FOUND_ORDER_DETAIL: OrderDetailData = { loading: false, notFound: true, order: null };
+
+// `orderId` nullable so a caller with no real id on hand yet (shouldn't normally happen - Orders
+// always routes by a real order.id) can still call this hook unconditionally, same pattern
+// productDetailApi.ts's useProductDetail uses for its own nullable handle.
+export function useOrder(orderId: string | null): OrderDetailData {
+  const [state, setState] = useState<OrderDetailData>(EMPTY_ORDER_DETAIL);
+
+  useEffect(() => {
+    if (!orderId) {
+      setState(NOT_FOUND_ORDER_DETAIL);
+      return;
+    }
+    let cancelled = false;
+    setState(EMPTY_ORDER_DETAIL);
+    fetchOrder(orderId)
+      .then((order) => {
+        if (!cancelled) setState({ loading: false, notFound: false, order });
+      })
+      .catch(() => {
+        if (!cancelled) setState(NOT_FOUND_ORDER_DETAIL);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId]);
+
+  return state;
 }

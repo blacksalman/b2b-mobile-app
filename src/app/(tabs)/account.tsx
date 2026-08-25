@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import {
@@ -42,18 +42,25 @@ export default function AccountScreen() {
   const [policyKey, setPolicyKey] = useState<string | null>(null);
   const [addressCount, setAddressCount] = useState(0);
 
-  useEffect(() => {
-    if (!loggedIn) return;
-    let cancelled = false;
-    fetchAddresses()
-      .then((addresses) => {
-        if (!cancelled) setAddressCount(addresses.length);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [loggedIn]);
+  // Re-fetches every time Account regains focus, not just on first mount - Account is a
+  // persistent tab screen (never remounted), so a mount-only fetch kept showing whatever the
+  // address count was the first time this screen ever opened, even after adding/deleting one on
+  // the Addresses screen and coming back (confirmed live: "2 saved addresses" shown after
+  // deleting down to 1).
+  useFocusEffect(
+    useCallback(() => {
+      if (!loggedIn) return;
+      let cancelled = false;
+      fetchAddresses()
+        .then((addresses) => {
+          if (!cancelled) setAddressCount(addresses.length);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }, [loggedIn])
+  );
 
   const fullName = [customer?.first_name, customer?.last_name].filter(Boolean).join(' ') || 'Your account';
   const initials =

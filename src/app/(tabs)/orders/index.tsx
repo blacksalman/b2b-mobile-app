@@ -1,25 +1,27 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { SmallBackChevronIcon, SmallForwardChevronIcon } from '@/icons';
-import { ORDERS, ORDER_STATUS_STYLE, ORDER_TAB_NAMES, orderTotalLabel, type OrderStatus } from '@/data/orders-content';
+import { useOrders, orderStatusFor, ORDER_STATUS_STYLE, ORDER_TAB_NAMES, type OrderStatus } from '@/data/ordersApi';
+import { money } from '@/utils/money';
 
-// Built against the new AyurvedaOne design system (screen_Orders.html, isOrders block) — Account's
-// "My Orders" tile previously linked to a `StubScreen` placeholder; this is a first build, not a
-// restyle. Ported verbatim from `orderTabs`/`filteredOrders`/`ordersEmpty` (source lines 2649-2656,
-// fully in range, well before this project's known 256KB truncation point).
+// Rebuilt against the real backend (GET /store/orders, ordersApi.ts's useOrders) - previously
+// this screen only ever rendered a hardcoded mock ORDERS array (orders-content.ts), never fetched
+// anything real at all. Status tabs are now real too - see ordersApi.ts's orderStatusFor for why
+// they're derived from `fulfillments` directly rather than a `fulfillment_status` field.
 export default function OrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<OrderStatus>('Confirmed');
+  const { loading, error, orders } = useOrders();
 
-  const filteredOrders = useMemo(() => ORDERS.filter((o) => o.status === tab), [tab]);
-  const ordersEmpty = filteredOrders.length === 0;
+  const filteredOrders = useMemo(() => orders.filter((o) => orderStatusFor(o) === tab), [orders, tab]);
+  const ordersEmpty = !loading && !error && filteredOrders.length === 0;
 
   const goAccount = () => router.push('/account');
-  const openOrder = (id: number) => router.push(`/orders/${id}`);
+  const openOrder = (id: string) => router.push(`/orders/${id}`);
 
   return (
     <View style={styles.screen}>
@@ -43,29 +45,39 @@ export default function OrdersScreen() {
       </View>
 
       <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-        {ordersEmpty ? (
+        {loading ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator color={ds.primaryInk} />
+          </View>
+        ) : error ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>Could not load your orders</Text>
+            <Text style={styles.emptyBody}>Check your connection and try again.</Text>
+          </View>
+        ) : ordersEmpty ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No orders here yet</Text>
             <Text style={styles.emptyBody}>Orders in this stage will show up here.</Text>
           </View>
         ) : (
           filteredOrders.map((o) => {
-            const statusStyle = ORDER_STATUS_STYLE[o.status];
+            const status = orderStatusFor(o);
+            const statusStyle = ORDER_STATUS_STYLE[status];
             return (
               <Pressable key={o.id} onPress={() => openOrder(o.id)} style={styles.orderCard}>
                 <View style={styles.orderCardTop}>
                   <View style={styles.orderCardIds}>
-                    <Text style={styles.orderId}>Order #{o.id}</Text>
-                    <Text style={styles.orderDate}>Order Date: {o.date}</Text>
+                    <Text style={styles.orderId}>Order #{o.display_id}</Text>
+                    <Text style={styles.orderDate}>Order Date: {new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
                   </View>
                   <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
-                    <Text style={[styles.statusBadgeText, { color: statusStyle.color }]}>{o.status}</Text>
+                    <Text style={[styles.statusBadgeText, { color: statusStyle.color }]}>{status}</Text>
                   </View>
                 </View>
                 <View style={styles.divider} />
                 <View style={styles.orderCardBottom}>
                   <Text style={styles.totalLabel}>Total:</Text>
-                  <Text style={styles.totalValue}>{orderTotalLabel(o)}</Text>
+                  <Text style={styles.totalValue}>{money(o.total)}</Text>
                   <SmallForwardChevronIcon size={8} color={ds.ink2} />
                 </View>
               </Pressable>

@@ -333,26 +333,97 @@ export interface MedusaOrderLineItem {
   product_title: string;
   thumbnail: string | null;
   quantity: number;
+  unit_price: number;
+}
+
+export interface MedusaOrderAddress {
+  first_name: string | null;
+  last_name: string | null;
+  address_1: string;
+  city: string;
+  province: string | null;
+  postal_code: string;
+  phone: string | null;
+}
+
+export interface MedusaOrderFulfillment {
+  id: string;
+  shipped_at: string | null;
+  delivered_at: string | null;
+  canceled_at: string | null;
 }
 
 export interface MedusaOrder {
   id: string;
   display_id: number;
+  // Order-level workflow status (pending/completed/canceled/...). Deliberately does NOT also
+  // fetch `fulfillment_status` - confirmed in this backend's own admin route source
+  // (api/admin/operations/dispatch/route.ts's isDispatchable comment) that it's a computed
+  // getter which only populates when hydrated through the Order module service directly; the
+  // cross-module query.graph the Store API uses returns it as undefined. ordersApi.ts's
+  // orderStatusFor() derives the real customer-facing status from `fulfillments` below instead
+  // (shipped_at/delivered_at/canceled_at), the same reliable approach the admin side already
+  // uses for the identical reason.
   status: string;
   created_at: string;
   total: number;
   currency_code: string;
   items: MedusaOrderLineItem[];
+  shipping_address: MedusaOrderAddress | null;
+  fulfillments: MedusaOrderFulfillment[];
 }
 
-const ORDER_FIELDS = ['id', 'display_id', 'status', 'created_at', 'total', 'currency_code', 'items.id', 'items.product_id', 'items.product_title', 'items.thumbnail', 'items.quantity'].join(',');
+// `items.quantity` (the shorthand path) silently vanishes from the response - confirmed live -
+// whenever `items.unit_price` is ALSO requested in the same query (a real query.graph bug: each
+// resolves fine alone, but together only unit_price survives). `items.detail.quantity` (the
+// unambiguous nested relation path - quantity actually lives on OrderItem/"detail", a separate
+// entity from the OrderLineItem product/price fields) co-exists with unit_price correctly -
+// confirmed live. Requested that way below and flattened back onto MedusaOrderLineItem.quantity
+// in fetchOrders/fetchOrder so every caller keeps the same flat shape.
+const ORDER_FIELDS = [
+  'id',
+  'display_id',
+  'status',
+  'created_at',
+  'total',
+  'currency_code',
+  'items.id',
+  'items.product_id',
+  'items.product_title',
+  'items.thumbnail',
+  'items.detail.quantity',
+  'items.unit_price',
+  'shipping_address.first_name',
+  'shipping_address.last_name',
+  'shipping_address.address_1',
+  'shipping_address.city',
+  'shipping_address.province',
+  'shipping_address.postal_code',
+  'shipping_address.phone',
+  'fulfillments.id',
+  'fulfillments.shipped_at',
+  'fulfillments.delivered_at',
+  'fulfillments.canceled_at',
+].join(',');
+
+type RawOrderLineItem = Omit<MedusaOrderLineItem, 'quantity'> & { detail: { quantity: number } };
+type RawOrder = Omit<MedusaOrder, 'items'> & { items: RawOrderLineItem[] };
+
+function flattenOrder(raw: RawOrder): MedusaOrder {
+  return { ...raw, items: raw.items.map((item) => ({ ...item, quantity: item.detail.quantity })) };
+}
 
 export async function fetchOrders(opts: { limit?: number; offset?: number } = {}): Promise<{ orders: MedusaOrder[]; count: number }> {
   const { limit = 20, offset = 0 } = opts;
-  return storeFetch('/store/orders', { limit: String(limit), offset: String(offset), fields: ORDER_FIELDS });
+  const data = await storeFetch<{ orders: RawOrder[]; count: number }>('/store/orders', {
+    limit: String(limit),
+    offset: String(offset),
+    fields: ORDER_FIELDS,
+  });
+  return { orders: data.orders.map(flattenOrder), count: data.count };
 }
 
 export async function fetchOrder(orderId: string): Promise<MedusaOrder> {
-  const data = await storeFetch<{ order: MedusaOrder }>(`/store/orders/${orderId}`, { fields: ORDER_FIELDS });
-  return data.order;
+  const data = await storeFetch<{ order: RawOrder }>(`/store/orders/${orderId}`, { fields: ORDER_FIELDS });
+  return flattenOrder(data.order);
 }
