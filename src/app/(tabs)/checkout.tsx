@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType, dsElevation } from '@/theme';
@@ -113,7 +113,9 @@ export default function CheckoutScreen() {
   );
 
   const goCart = () => router.push('/cart');
-  const goAddresses = () => router.push('/addresses');
+  // Addresses' own back button defaults to Account (a preserved quirk from when Account was its
+  // only entry point) - `from=checkout` tells it to return here instead.
+  const goAddresses = () => router.push('/addresses?from=checkout');
 
   const placeOrder = async () => {
     if (!cart || placing.current) return;
@@ -253,19 +255,29 @@ export default function CheckoutScreen() {
         <View>
           <Text style={[styles.sectionTitle, styles.sectionTitleSpaced]}>Order summary</Text>
           <View style={[styles.card, styles.summaryCard]}>
-            {cart.items.map((line) => (
-              <View key={line.id} style={styles.lineRow}>
-                <View style={styles.lineThumb} />
-                <Text style={styles.lineName} numberOfLines={1}>
-                  {line.quantity} × {line.product_title}
-                </Text>
-                <Text style={styles.lineTotal}>{money(line.unit_price * line.quantity)}</Text>
-              </View>
-            ))}
+            {cart.items.map((line) => {
+              // Same real per-line GST rate the real cart's own tax calculation already resolved
+              // (confirmed live) that Cart (cartApi.ts's buildLine) applies - shows the same
+              // tax-included number here instead of the raw tax-exclusive unit_price.
+              const taxMult = 1 + (line.tax_lines?.reduce((sum, t) => sum + t.rate, 0) ?? 0) / 100;
+              return (
+                <View key={line.id} style={styles.lineRow}>
+                  {line.thumbnail ? (
+                    <Image source={{ uri: line.thumbnail }} style={styles.lineThumb} />
+                  ) : (
+                    <View style={styles.lineThumb} />
+                  )}
+                  <Text style={styles.lineName} numberOfLines={1}>
+                    {line.quantity} × {line.product_title}
+                  </Text>
+                  <Text style={styles.lineTotal}>{money(line.unit_price * line.quantity * taxMult)}</Text>
+                </View>
+              );
+            })}
             <View style={styles.divider} />
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>{money(cart.subtotal)}</Text>
+              <Text style={styles.summaryValue}>{money(cart.item_subtotal)}</Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Shipping</Text>
@@ -409,7 +421,11 @@ const styles = StyleSheet.create({
   shippingLeft: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.md },
   shippingLabel: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
   shippingValue: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.ink },
-  summaryCard: { padding: dsSpacing.md },
+  // Overrides `card`'s flexDirection: 'row' (correct for the Address card's icon+text layout,
+  // wrong here) - without this the line items, divider, and Subtotal/Shipping/GST/Total rows all
+  // laid out side-by-side in one row instead of stacking, spilling everything past the first
+  // product row off the right edge of the card/screen.
+  summaryCard: { padding: dsSpacing.md, flexDirection: 'column', alignItems: 'stretch' },
   lineRow: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.sm, paddingVertical: dsSpacing.sm },
   lineThumb: { flexShrink: 0, width: 36, height: 36, borderRadius: dsRadii.input, backgroundColor: ds.primarySoft },
   lineName: { flex: 1, minWidth: 0, fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },

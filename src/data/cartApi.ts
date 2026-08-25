@@ -8,7 +8,7 @@ import {
   type MedusaCartLineItem,
 } from '@/lib/medusaCart';
 import { fetchProductsByIds, type MedusaProduct, type MedusaVariant } from '@/lib/medusaClient';
-import { getCartId } from './cartSync';
+import { getCartId, waitForPendingCartSyncs } from './cartSync';
 import { money } from '@/utils/money';
 
 // Real Cart page / mini-cart data - replaces the old local computeCartTotals (cartTotals.ts),
@@ -101,6 +101,12 @@ function buildLine(item: MedusaCartLineItem, product: MedusaProduct | undefined)
   const hasDiscount = mrp !== undefined && mrp > item.unit_price;
   const lineTotal = item.unit_price * item.quantity;
   const lineMrpTotal = hasDiscount ? mrp! * item.quantity : undefined;
+  // The real cart's own automatic tax calculation already resolved this exact line's GST rate
+  // (confirmed live, e.g. tax_lines: [{rate: 5, code: "gst-5"}]) - applied to the DISPLAY labels
+  // only, so a line reads the same tax-included number Home/Product Detail already show for this
+  // product. `unitPrice`/`lineTotal`/etc (the raw numbers) stay tax-exclusive, matching the real
+  // Order summary's Subtotal/Tax/Total rows below, which are already correct as-is.
+  const taxMult = 1 + (item.tax_lines?.reduce((sum, t) => sum + t.rate, 0) ?? 0) / 100;
   return {
     id: item.id,
     productId: item.product_id,
@@ -113,10 +119,10 @@ function buildLine(item: MedusaCartLineItem, product: MedusaProduct | undefined)
     unitMrp: hasDiscount ? mrp! : undefined,
     lineTotal,
     lineMrpTotal,
-    unitPriceLabel: money(item.unit_price),
-    unitMrpLabel: hasDiscount ? money(mrp!) : undefined,
-    lineTotalLabel: money(lineTotal),
-    lineMrpTotalLabel: hasDiscount ? money(lineMrpTotal!) : undefined,
+    unitPriceLabel: money(item.unit_price * taxMult),
+    unitMrpLabel: hasDiscount ? money(mrp! * taxMult) : undefined,
+    lineTotalLabel: money(lineTotal * taxMult),
+    lineMrpTotalLabel: hasDiscount ? money(lineMrpTotal! * taxMult) : undefined,
     discountLabel: hasDiscount ? '-' + Math.round((1 - item.unit_price / mrp!) * 100) + '%' : undefined,
     hasDiscount,
   };
@@ -126,12 +132,11 @@ function buildCartData(cart: MedusaCart | null, productsById: Map<string, Medusa
   if (!cart) return { ...EMPTY, loading, error };
   const lines = cart.items.map((item) => buildLine(item, productsById.get(item.product_id)));
   const hasDiscount = lines.some((l) => l.hasDiscount);
-  const total = cart.subtotal + cart.tax_total;
-  // mrpTotal swaps in each discounted line's real MRP total in place of its actual line total,
-  // so the aggregate "was X" figure only ever reflects genuine per-line markdowns, never an
-  // invented percentage.
+  // item_subtotal/item_tax_total/item_total (not the plain subtotal/tax_total/total fields) -
+  // see MedusaCart's own comment: those stay items-only even once Checkout has attached a
+  // shipping method to this same cart, which plain `subtotal` does not.
   const mrpTotal = hasDiscount
-    ? lines.reduce((sum, l) => sum + (l.hasDiscount ? l.lineMrpTotal! : l.lineTotal), 0) + cart.tax_total
+    ? lines.reduce((sum, l) => sum + (l.hasDiscount ? l.lineMrpTotal! : l.lineTotal), 0) + cart.item_tax_total
     : undefined;
 
   return {
@@ -142,9 +147,9 @@ function buildCartData(cart: MedusaCart | null, productsById: Map<string, Medusa
     cartEmpty: lines.length === 0,
     cartHasItems: lines.length > 0,
     itemCount: lines.reduce((n, l) => n + l.qty, 0),
-    subtotalLabel: money(cart.subtotal),
-    taxLabel: money(cart.tax_total),
-    totalLabel: money(total),
+    subtotalLabel: money(cart.item_subtotal),
+    taxLabel: money(cart.item_tax_total),
+    totalLabel: money(cart.item_total),
     hasDiscount,
     mrpTotalLabel: mrpTotal !== undefined ? money(mrpTotal) : undefined,
   };
@@ -169,6 +174,9 @@ export function useRealCart(): UseRealCartResult {
     const myRequestId = ++requestId.current;
     setLoading(true);
     try {
+      // Let any add/inc/dec still in flight from wherever the user just tapped land first - see
+      // waitForPendingCartSyncs' own comment for the exact race this closes.
+      await waitForPendingCartSyncs();
       const cartId = await getCartId();
       const fresh = await fetchCart(cartId);
       const products = fresh.items.length ? await fetchProductsByIds([...new Set(fresh.items.map((i) => i.product_id))]) : [];

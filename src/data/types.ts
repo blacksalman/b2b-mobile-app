@@ -32,6 +32,13 @@ export interface Product {
   // to choose between). length > 1 is what drives "Select option" instead of a plain Add button
   // (DsProductCard) and the real variant picker on the product detail page - a genuinely
   // different concept from `quantityTiers` above (qty-based bulk pricing WITHIN one variant).
+  taxRate?: number; // real GST rate as a percentage (5/12/18/28/0, see taxRates.ts) applied to
+  // `price`/`cmp` for every customer-facing price label (decorateProduct.ts) - API-backed only,
+  // undefined for the mock catalog (no tax multiplier applied, same as every other real-API-only
+  // field). `price`/`cmp` themselves stay the raw pre-tax base amount - only display labels
+  // (priceLabel/compareLabel/etc.) fold this in, so quantity-tier math, cart sync (which only
+  // ever sends variant_id + quantity, never a price), and the real Medusa cart's own tax
+  // calculation are all unaffected.
 }
 
 export interface Category {

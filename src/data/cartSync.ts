@@ -84,6 +84,17 @@ export function syncCartQuantity(hashId: number, quantity: number): Promise<void
   return next;
 }
 
+// Cart's own reload() (cartApi.ts) fetches the real cart independently of whatever add/inc/dec
+// sync is still in flight from wherever the user just tapped Add - since syncCartQuantity is
+// intentionally fire-and-forget (the caller's local optimistic state is already updated, it
+// doesn't wait around), navigating to Cart fast enough can fetch the server cart BEFORE that add
+// has actually landed, showing "No cases yet" for an item that really is about to be there.
+// Awaiting every currently in-flight chain here (right before Cart's own fetch) closes that race
+// without turning every add/inc/dec elsewhere in the app into a blocking call.
+export function waitForPendingCartSyncs(): Promise<void> {
+  return Promise.all([...syncChainByHashId.values()].map((p) => p.catch(() => {}))).then(() => undefined);
+}
+
 async function syncCartQuantityOnce(hashId: number, quantity: number): Promise<void> {
   try {
     const cartId = await ensureCartId();

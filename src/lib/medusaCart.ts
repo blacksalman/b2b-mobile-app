@@ -19,6 +19,11 @@ export interface MedusaCartLineItem {
   // strike-through MRP/discount%, not a locally-recomputed guess.
   compare_at_unit_price: number | null;
   quantity: number;
+  // Real per-line GST rate(s) the region's automatic tax calculation already resolved for this
+  // exact line (confirmed live, e.g. `[{rate: 5, code: "gst-5", ...}]`) - used to show a
+  // tax-included per-unit/line price on Cart (cartApi.ts's buildLine), same real number Home/
+  // Product Detail already display, instead of the raw tax-exclusive unit_price.
+  tax_lines?: { rate: number }[];
 }
 
 export interface MedusaCartAddress {
@@ -41,7 +46,16 @@ export interface MedusaCart {
   completed_at: string | null;
   items: MedusaCartLineItem[];
   shipping_address: MedusaCartAddress | null;
+  // NOT items-only despite the name - confirmed live it becomes item_subtotal + shipping_subtotal
+  // the moment ANY shipping method is attached to the cart (which happens automatically the
+  // instant Checkout loads, even before an order is placed). `item_subtotal`/`item_tax_total`/
+  // `item_total` below are the real items-only figures (confirmed live: always item price/tax
+  // regardless of whether a shipping method exists) - use those for a subtotal/total that's
+  // meant to exclude shipping (Cart's own summary, and Checkout's "Subtotal" row).
   subtotal: number;
+  item_subtotal: number;
+  item_tax_total: number;
+  item_total: number;
   discount_total: number;
   shipping_total: number;
   tax_total: number;
@@ -73,8 +87,12 @@ export function updateLineItemQuantity(cartId: string, lineItemId: string, quant
 }
 
 export function removeLineItem(cartId: string, lineItemId: string): Promise<MedusaCart> {
-  return storeMutate<{ cart: MedusaCart }>(`/store/carts/${cartId}/line-items/${lineItemId}`, 'DELETE').then(
-    (d) => d.cart
+  // Unlike every other cart mutation here, Medusa's line-item DELETE does NOT respond
+  // `{cart: {...}}` - confirmed live it responds `{id, object, deleted, parent: {...cart...}}`.
+  // Reading `.cart` here used to resolve to undefined, which made the caller's setCart(undefined)
+  // show Cart as fully empty after removing just one line, even with others left.
+  return storeMutate<{ parent: MedusaCart }>(`/store/carts/${cartId}/line-items/${lineItemId}`, 'DELETE').then(
+    (d) => d.parent
   );
 }
 

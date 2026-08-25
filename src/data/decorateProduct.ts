@@ -20,7 +20,14 @@ export function decorateProduct(
 ): DecoratedProduct {
   const gated = isGated(product, gatePricingEnabled, loggedIn);
   const disc = loggedIn ? 0.9 : 1;
-  const price = product.price || 0;
+  // Real GST rate (product.taxRate, taxRates.ts) folded into every customer-facing price label
+  // below - product.price/product.cmp themselves stay the raw pre-tax base (still used
+  // correctly by quantity-tier math, cart sync, and the real Medusa cart's own tax calculation,
+  // none of which read these formatted label strings). undefined taxRate (mock catalog) means
+  // taxMult is exactly 1, i.e. no change to existing mock-catalog price displays.
+  const taxMult = 1 + (product.taxRate ?? 0) / 100;
+  const price = (product.price || 0) * taxMult;
+  const cmp = product.cmp ? product.cmp * taxMult : undefined;
 
   const countMatch = PACK_COUNT_RE.exec(product.cs || '');
   const n = countMatch ? Number(countMatch[1]) : 1;
@@ -36,7 +43,7 @@ export function decorateProduct(
     return PACK_NOUNS.includes(w) ? w : 'pack';
   })();
 
-  const compareEachBase = product.cmp || price * 1.18;
+  const compareEachBase = cmp || price * 1.18;
   const compareEach = money(compareEachBase / (n < 2 ? 1 : n));
 
   return {
@@ -45,10 +52,10 @@ export function decorateProduct(
     gated,
     showPrice: !gated,
     priceLabel: gated ? '' : money(price * disc),
-    compareLabel: product.cmp ? money(product.cmp) : money(price * 1.18),
+    compareLabel: cmp ? money(cmp) : money(price * 1.18),
     unitPriceLabel: gated ? '' : money(price / 6) + ' / unit',
     priceOrGate: gated ? 'log in for price' : money(price * disc),
-    packLine: (product.cmp ? 'MRP ' + money(product.cmp) + ' · ' : '') + product.cs,
+    packLine: (cmp ? 'MRP ' + money(cmp) + ' · ' : '') + product.cs,
     eachLabel,
     packNoun,
     compareEach,

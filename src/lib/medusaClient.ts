@@ -164,6 +164,7 @@ export interface MedusaProduct {
   images?: { id: string; url: string }[];
   collection?: { id: string; title: string } | null;
   categories?: { id: string; name: string }[];
+  type_id?: string | null; // resolves this product's real GST rate - see taxRates.ts
   variants?: MedusaVariant[];
 }
 
@@ -179,6 +180,7 @@ const PRODUCT_FIELDS = [
   'collection.title',
   'categories.id',
   'categories.name',
+  'type_id',
   'variants.id',
   'variants.title',
   '*variants.calculated_price',
@@ -300,6 +302,18 @@ export interface DeliveryEstimate {
 
 export function fetchDeliveryEstimate(pincode: string): Promise<DeliveryEstimate> {
   return storeFetch('/store/delivery-tat', { pincode });
+}
+
+// GET /store/tax-rates (src/api/store/tax-rates/route.ts) - real per-product-type GST rates
+// (5 real rates on this store: 0/5/12/18/28%, resolved by product.type_id, `defaultRate` for
+// anything unmapped). See taxRates.ts for how this is cached/applied to product prices.
+export interface TaxRatesResponse {
+  defaultRate: number;
+  byProductType: Record<string, number>;
+}
+
+export function fetchTaxRates(): Promise<TaxRatesResponse> {
+  return storeFetch('/store/tax-rates');
 }
 
 // Native GET /store/orders (docs/STORE_API.md section 7) - auto-scoped to the logged-in

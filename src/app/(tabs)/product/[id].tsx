@@ -284,8 +284,13 @@ export default function ProductScreen() {
   // not a flat, qty-unaware price/cmp - and not `product`'s own baseline once a different real
   // variant has been picked.
   const barQty = inCart ? cartQty : 1;
-  const barUnitPrice = hasBulkTiers(active) ? bulkUnitPrice(active, barQty) : active.price || 0;
-  const referenceUnitPrice = active.cmp || active.price || 0;
+  // Real GST rate (active.taxRate, taxRates.ts) - this page computes its own price block
+  // directly rather than going through decorateProduct's formatter, so it needs the same
+  // tax-inclusive treatment applied here. hasBulkTiers/bulkUnitPrice still work off the raw
+  // pre-tax base price/quantityTiers - tax is only folded in for the final display numbers.
+  const taxMult = 1 + (active.taxRate ?? 0) / 100;
+  const barUnitPrice = (hasBulkTiers(active) ? bulkUnitPrice(active, barQty) : active.price || 0) * taxMult;
+  const referenceUnitPrice = (active.cmp || active.price || 0) * taxMult;
   const productLineTotal = money(barUnitPrice * barQty);
   const productLineMrp = money(referenceUnitPrice * barQty);
   const showBarSavings = referenceUnitPrice > 0 && barUnitPrice < referenceUnitPrice;
@@ -440,7 +445,7 @@ export default function ProductScreen() {
                   ) : (
                     <>
                       <Text style={styles.priceValueOnly}>{money(barUnitPrice)}</Text>
-                      <Text style={styles.priceSubline}>MRP · per unit · excl. GST</Text>
+                      <Text style={styles.priceSubline}>MRP · per unit · inclusive of GST</Text>
                     </>
                   )}
                 </>

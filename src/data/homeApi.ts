@@ -17,6 +17,7 @@ import { registerApiProductVariant } from './cartSync';
 import { registerProduct } from './productRegistry';
 import { hashProductId } from './idHash';
 import { hasBulkTiers, bulkUnitPrice } from './product-detail-content';
+import { getTaxRateForProductType } from './taxRates';
 import type { CartState, Product } from './types';
 import type { RailProduct } from './home-content';
 
@@ -233,14 +234,19 @@ function isVariantInStock(variant?: MedusaVariant): boolean {
 // product detail page's real variant grid - only meaningful (and only ever read) when there's
 // more than one, see Product.realVariants's own comment in types.ts.
 function buildRealVariantOptions(mp: MedusaProduct): NonNullable<Product['realVariants']> {
+  // Same GST rate for every variant of this product (tax is a product_type-level attribute, not
+  // per-variant) - baked directly into price/cmp here since the variant picker (product/[id].tsx)
+  // reads these straight into money() without going through decorateProduct's own tax-aware
+  // formatting.
+  const taxMult = 1 + getTaxRateForProductType(mp.type_id) / 100;
   return (mp.variants ?? []).map((v) => {
     const price = v.calculated_price?.calculated_amount ?? 0;
     const original = v.calculated_price?.original_amount ?? price;
     return {
       id: v.id,
       title: v.title,
-      price,
-      cmp: original > price ? original : undefined,
+      price: price * taxMult,
+      cmp: original > price ? original * taxMult : undefined,
       inStock: isVariantInStock(v),
     };
   });
@@ -283,6 +289,7 @@ function buildProductForVariant(mp: MedusaProduct, variant: MedusaVariant | unde
     handle: mp.handle,
     quantityTiers,
     inStock: isVariantInStock(variant),
+    taxRate: getTaxRateForProductType(mp.type_id),
   };
   registerProduct(product);
   return product;

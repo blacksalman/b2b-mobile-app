@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { AddressRemoveIcon, CloseIcon, EditPencilIcon, LocationPinIcon, PlusIcon, SmallBackChevronIcon } from '@/icons';
@@ -39,6 +39,7 @@ const EMPTY_DRAFT: DraftFields = { name: '', phone: '', biz: '', line: '', landm
 // pre-filling Add mode with a hardcoded seed contact is dropped - a real Add form starts blank.
 export default function AddressesScreen() {
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
   const insets = useSafeAreaInsets();
   const { flash } = useAppState();
 
@@ -60,7 +61,10 @@ export default function AddressesScreen() {
 
   useEffect(reload, [reload]);
 
-  const goAccount = () => router.push('/account');
+  // Defaults to Account (its original only entry point) - Checkout's "Change" link opens this
+  // screen with ?from=checkout so this returns there instead, rather than always dumping the
+  // shopper back on Account mid-checkout.
+  const goAccount = () => router.push(from === 'checkout' ? '/checkout' : '/account');
 
   const openAdd = () => {
     setMode('add');

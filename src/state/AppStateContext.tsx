@@ -4,6 +4,7 @@ import type { FilterTabName } from '@/data/categories-content';
 import { computeCartTotals, type CartTotals } from '@/data/cartTotals';
 import { hydrateCartState } from '@/data/cartSync';
 import { hydrateToken, fetchCurrentCustomer, logout as logoutCustomer, type MedusaCustomer } from '@/lib/medusaAuth';
+import { hydrateTaxRates } from '@/data/taxRates';
 
 export type FilterMultiKind = 'avail' | 'brand' | 'ing' | 'concern' | 'form';
 
@@ -179,6 +180,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Real GST rates (taxRates.ts) - fetched once here so it's already cached by the time the
+  // first product card renders and computes its tax-inclusive display price.
+  useEffect(() => {
+    hydrateTaxRates();
   }, []);
 
   // Restore the real customer session (see medusaAuth.ts) - a no-op (stays logged out) when
