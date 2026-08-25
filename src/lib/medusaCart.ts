@@ -96,14 +96,12 @@ export function removeLineItem(cartId: string, lineItemId: string): Promise<Medu
   );
 }
 
-// Checkout completion (docs/STORE_API.md section 6) - all native. Real online payment
-// (Razorpay's Checkout.js widget) needs a card-tokenizing UI the customer taps through, deferred
-// per the "I will pay later" decision - for now every order completes via the backend's built-in
-// "system"/manual payment provider (pp_system_default, confirmed enabled on the India region
-// alongside pp_razorpay_razorpay), i.e. a real order with no online payment collected. Swapping
-// in the Razorpay widget later only touches createPaymentSession's provider_id + a widget step
-// between that call and completeCart - nothing else in this file changes.
+// Checkout completion (docs/STORE_API.md section 6) - all native. `pp_system_default` (the
+// manual/no-online-payment provider) is kept around only as a fallback the app itself no longer
+// calls in the normal flow - real payment now goes through `pp_razorpay_razorpay` below
+// (createRazorpayPaymentSession), confirmed enabled on the India region.
 const SYSTEM_PAYMENT_PROVIDER_ID = 'pp_system_default';
+const RAZORPAY_PAYMENT_PROVIDER_ID = 'pp_razorpay_razorpay';
 
 export interface MedusaShippingOption {
   id: string;
@@ -138,6 +136,44 @@ export async function createSystemPaymentSession(cartId: string): Promise<void> 
   await storeMutate(`/store/payment-collections/${payment_collection.id}/payment-sessions`, 'POST', {
     provider_id: SYSTEM_PAYMENT_PROVIDER_ID,
   });
+}
+
+export interface RazorpayPaymentSessionData {
+  // Razorpay's own order id (a razorpay-side object, NOT a Medusa id) - what the Checkout.js
+  // widget needs as `order_id` to open the payment sheet against.
+  orderId: string;
+  // Already in the smallest currency unit (paise for INR) - this is Razorpay's own order.amount
+  // as returned by their Orders API (confirmed in the provider plugin's source:
+  // initiatePayment() creates the order via razorpay.orders.create() and returns that raw
+  // response verbatim in the session's `data`) - pass straight through to Checkout.js, don't
+  // re-multiply/convert.
+  amount: number;
+  currency: string;
+}
+
+// POST /store/payment-collections/:id/payment-sessions with provider_id "pp_razorpay_razorpay" -
+// confirmed live this backend's India region already has this provider enabled and real
+// Razorpay TEST-mode credentials configured (RAZORPAY_KEY_ID/KEY_SECRET/WEBHOOK_SECRET). The
+// provider's initiatePayment creates a REAL Razorpay order server-side and stores its full
+// response (id/amount/currency/...) in the session's `data` - extracted here for the mobile
+// app's Razorpay Checkout WebView (razorpayCheckout.ts) to open against.
+//
+// Confirmed via the provider's own source that it requires `customer.phone` (falls back to
+// billing_address.phone, which setCartAddress above always sets) - every real logged-in
+// customer in this app already has phone set (phone-OTP is the only signup path), so this is
+// never actually missing for a real checkout.
+export async function createRazorpayPaymentSession(cartId: string): Promise<RazorpayPaymentSessionData> {
+  const { payment_collection } = await storeMutate<{ payment_collection: { id: string } }>('/store/payment-collections', 'POST', {
+    cart_id: cartId,
+  });
+  const { payment_collection: updated } = await storeMutate<{
+    payment_collection: { payment_sessions: { provider_id: string; data: { id: string; amount: number; currency: string } }[] };
+  }>(`/store/payment-collections/${payment_collection.id}/payment-sessions`, 'POST', {
+    provider_id: RAZORPAY_PAYMENT_PROVIDER_ID,
+  });
+  const session = updated.payment_sessions.find((s) => s.provider_id === RAZORPAY_PAYMENT_PROVIDER_ID);
+  if (!session) throw new Error('Razorpay payment session was not created');
+  return { orderId: session.data.id, amount: session.data.amount, currency: session.data.currency };
 }
 
 export interface MedusaOrderResult {

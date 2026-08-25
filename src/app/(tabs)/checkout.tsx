@@ -21,23 +21,37 @@ import {
   fetchShippingOptions,
   addShippingMethod,
   setCartAddress,
-  createSystemPaymentSession,
+  createRazorpayPaymentSession,
   completeCart,
   type MedusaCart,
   type MedusaShippingOption,
 } from '@/lib/medusaCart';
+import { RAZORPAY_KEY_ID } from '@/lib/medusaClient';
 import { fetchAddresses, type MedusaAddress } from '@/lib/medusaAddresses';
 import { money } from '@/utils/money';
+import { RazorpayCheckoutModal } from '@/components/composite/RazorpayCheckoutModal';
+import type { RazorpayCheckoutParams } from '@/lib/razorpayCheckout';
 
 type PaymentStatus = 'processing' | 'success' | 'failed';
 
+// Number of completeCart() retries after a successful Razorpay payment before giving up and
+// showing a real failure - see completeOrder's own comment for why a retry is needed at all.
+const COMPLETE_RETRY_ATTEMPTS = 3;
+const COMPLETE_RETRY_DELAY_MS = 1500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Rebuilt against the new AyurvedaOne design system (screen_Checkout.html, isCheckout block), same
 // layout as the original mock build - now driven by a real Medusa cart (docs/STORE_API.md section
-// 6) instead of the local computeCartTotals fake math. Payment collection uses the built-in
-// "system"/manual provider (pp_system_default) rather than the real Razorpay widget - "I will pay
-// later" decision (Checkout payment scope question) - so this creates a genuinely real order with
-// no online payment collected, closer to a pay-on-account/COD model than a paid checkout. Swapping
-// in the Razorpay widget later only touches placeOrder()'s payment-session call.
+// 6) instead of the local computeCartTotals fake math. Payment now goes through the real Razorpay
+// provider (pp_razorpay_razorpay, confirmed live: real Razorpay TEST-mode credentials, India
+// region already has it enabled) via a WebView hosting Razorpay's own Checkout.js
+// (RazorpayCheckoutModal/razorpayCheckout.ts) - the standard integration for an Expo MANAGED
+// workflow app (no android/ios folders here, so the native react-native-razorpay SDK would
+// require ejecting to a custom dev client, a real disruption to the existing `npx expo start`/
+// Expo Go testing workflow).
 export default function CheckoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -49,6 +63,8 @@ export default function CheckoutScreen() {
   const [address, setAddress] = useState<MedusaAddress | null>(null);
   const [shippingOption, setShippingOption] = useState<MedusaShippingOption | null>(null);
 
+  const [startingPayment, setStartingPayment] = useState(false);
+  const [razorpaySession, setRazorpaySession] = useState<RazorpayCheckoutParams | null>(null);
   const [paymentSheetOpen, setPaymentSheetOpen] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('processing');
   const [orderError, setOrderError] = useState('');
@@ -117,31 +133,89 @@ export default function CheckoutScreen() {
   // only entry point) - `from=checkout` tells it to return here instead.
   const goAddresses = () => router.push('/addresses?from=checkout');
 
+  // Opens the real Razorpay payment sheet (a fresh Razorpay order every attempt - retryOrder
+  // below just calls this again, so a failed/expired attempt never gets reused).
   const placeOrder = async () => {
     if (!cart || placing.current) return;
     placing.current = true;
     setOrderError('');
-    setPaymentStatus('processing');
-    setPaymentSheetOpen(true);
+    setStartingPayment(true);
     try {
-      await createSystemPaymentSession(cart.id);
+      const session = await createRazorpayPaymentSession(cart.id);
+      setRazorpaySession({
+        keyId: RAZORPAY_KEY_ID,
+        orderId: session.orderId,
+        amount: session.amount,
+        currency: session.currency,
+        name: 'AyurvedaOne',
+        description: `Order payment - ${cart.items.length} item${cart.items.length === 1 ? '' : 's'}`,
+        prefillName: [customer?.first_name, customer?.last_name].filter(Boolean).join(' '),
+        prefillEmail: customer?.email,
+        // Razorpay's prefill.contact wants a plain 10-digit number, not the "+91"-prefixed form
+        // customer.phone is stored in (same strip edit-profile.tsx/addresses.tsx already do).
+        prefillContact: (customer?.phone ?? '').replace(/^\+91/, ''),
+        themeColor: ds.primaryStrong,
+      });
+    } catch {
+      setOrderError('Could not start payment. Please try again.');
+      setPaymentStatus('failed');
+      setPaymentSheetOpen(true);
+    } finally {
+      setStartingPayment(false);
+      placing.current = false;
+    }
+  };
+
+  // Called once Razorpay's own Checkout.js reports success (razorpay_payment_id, confirmed real
+  // by Razorpay's own client-side widget, not yet Medusa-verified). Medusa does NOT trust that
+  // client-side signal at all - confirmed in the provider plugin's source that authorizePayment
+  // independently re-checks payment status with a LIVE call to Razorpay's own API
+  // (razorpay.orders.fetch/fetchPayments) the moment completeCart runs, so this is genuinely safe
+  // to call immediately rather than needing a separate signature-submission step (the plugin has
+  // no endpoint for one anyway - its updatePayment always throws NOT_ALLOWED). The only real
+  // failure mode is Razorpay-side propagation lag between "payment authorized" and that being
+  // reflected on a fresh orders.fetch call, which surfaces as a retryable cart-complete failure -
+  // handled by retrying a few times with a short delay before treating it as a genuine failure.
+  const completeOrder = async (attempt = 1): Promise<void> => {
+    if (!cart) return;
+    try {
       const result = await completeCart(cart.id);
       if (result.type === 'order') {
         setPlacedOrder(result.order);
         await resetCartAfterOrder();
         clearCart();
         setPaymentStatus('success');
-      } else {
-        setOrderError(result.error);
-        setPaymentStatus('failed');
+        return;
       }
+      if (attempt < COMPLETE_RETRY_ATTEMPTS) {
+        await sleep(COMPLETE_RETRY_DELAY_MS);
+        return completeOrder(attempt + 1);
+      }
+      setOrderError(result.error);
+      setPaymentStatus('failed');
     } catch {
       setOrderError('Something went wrong placing your order.');
       setPaymentStatus('failed');
-    } finally {
-      placing.current = false;
     }
   };
+
+  const onRazorpaySuccess = () => {
+    setRazorpaySession(null);
+    setOrderError('');
+    setPaymentStatus('processing');
+    setPaymentSheetOpen(true);
+    completeOrder();
+  };
+  // Customer backed out of the Razorpay sheet themselves (closed it / tapped outside) - just
+  // close it, no error to show, no payment sheet - they can tap "Place order" again whenever.
+  const onRazorpayDismiss = () => setRazorpaySession(null);
+  const onRazorpayError = (message: string) => {
+    setRazorpaySession(null);
+    setOrderError(message);
+    setPaymentStatus('failed');
+    setPaymentSheetOpen(true);
+  };
+
   const closePaymentSheet = () => setPaymentSheetOpen(false);
   const retryOrder = () => {
     setPaymentSheetOpen(false);
@@ -329,13 +403,27 @@ export default function CheckoutScreen() {
         </View>
         <Pressable
           onPress={placeOrder}
-          disabled={!address || cart.items.length === 0}
-          style={[styles.payButton, (!address || cart.items.length === 0) && styles.payButtonDisabled]}
+          disabled={!address || cart.items.length === 0 || startingPayment}
+          style={[styles.payButton, (!address || cart.items.length === 0 || startingPayment) && styles.payButtonDisabled]}
         >
-          <Text style={styles.payButtonText}>Place order</Text>
-          <ArrowRightIcon size={13} color={ds.surface} strokeWidth={2.2} />
+          {startingPayment ? (
+            <ActivityIndicator color={ds.surface} />
+          ) : (
+            <>
+              <Text style={styles.payButtonText}>Place order</Text>
+              <ArrowRightIcon size={13} color={ds.surface} strokeWidth={2.2} />
+            </>
+          )}
         </Pressable>
       </View>
+
+      <RazorpayCheckoutModal
+        visible={!!razorpaySession}
+        params={razorpaySession}
+        onSuccess={onRazorpaySuccess}
+        onDismiss={onRazorpayDismiss}
+        onError={onRazorpayError}
+      />
 
       {paymentSheetOpen && (
         <>

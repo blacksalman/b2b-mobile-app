@@ -8,6 +8,10 @@ import { getAuthHeader } from './authToken';
 const BASE_URL = process.env.EXPO_PUBLIC_MEDUSA_BACKEND_URL ?? 'http://localhost:9000';
 const PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? '';
 export const DEFAULT_REGION_ID = process.env.EXPO_PUBLIC_MEDUSA_REGION_ID ?? '';
+// Razorpay's public key id - safe to ship client-side (see .env's own comment). Used by
+// checkout.tsx to open the Razorpay Checkout WebView (razorpayCheckout.ts); must match the
+// backend's RAZORPAY_KEY_ID.
+export const RAZORPAY_KEY_ID = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID ?? '';
 
 // ngrok's free tier serves an HTML "you're about to visit..." interstitial instead of the real
 // response for any request it doesn't recognize as already-trusted, which would otherwise
