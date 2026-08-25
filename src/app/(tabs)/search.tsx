@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing } from '@/theme';
 import { BackChevronIcon, CloseIcon, SearchIcon, MicIcon } from '@/icons';
@@ -26,6 +26,19 @@ export default function SearchScreen() {
 
   const [query, setQuery] = useState('');
   const [listening] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+
+  // This is a persistent tab screen (Home's search bar navigates here, doesn't remount it), so
+  // the keyboard needs to be opened explicitly every time the screen becomes focused - a plain
+  // TextInput `autoFocus` only fires once, on first mount, which is why the keyboard previously
+  // only appeared after a second manual tap. A short delay is needed because the tab-switch
+  // transition itself can otherwise swallow the focus call.
+  useFocusEffect(
+    useCallback(() => {
+      const timeout = setTimeout(() => inputRef.current?.focus(), 100);
+      return () => clearTimeout(timeout);
+    }, [])
+  );
 
   // Real full-catalog search (GET /store/products-search) - see useProductSearch for why this
   // is a two-step fetch (search for the ranked id list, then hydrate price/collection/category
@@ -52,7 +65,13 @@ export default function SearchScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}>
+      {/* ScrollView's default keyboardShouldPersistTaps ("never") swallows the FIRST tap on
+          anything inside it while the keyboard is open - purely to dismiss the keyboard,
+          without the tapped element's own onPress firing at all. That's exactly why the back
+          button (and everything else here - recent chips, product cards) needed two taps
+          whenever the keyboard was up. "handled" lets a tap on any actual touchable register
+          normally; only tapping truly empty space still dismisses the keyboard. */}
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}>
         <View style={styles.topRow}>
           <Pressable onPress={() => router.push('/')} style={styles.backButton} hitSlop={8}>
             <BackChevronIcon size={20} color={ds.ink} />
@@ -60,6 +79,7 @@ export default function SearchScreen() {
           <View style={styles.searchInput}>
             <SearchIcon size={17} color={ds.primaryInk} />
             <TextInput
+              ref={inputRef}
               value={query}
               onChangeText={setQuery}
               onSubmitEditing={commitSearch}

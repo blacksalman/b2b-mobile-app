@@ -134,7 +134,10 @@ export function useCategoryProducts(
 
     const trimmed = query.trim();
     const myRequestId = ++requestId.current;
-    setState((prev) => ({ ...prev, loading: true, error: false }));
+    // Clears results/count immediately, not just a spread-over-prev - otherwise switching
+    // category/collection (e.g. Listing's brand cards) kept showing the PREVIOUS selection's
+    // products/count for the whole fetch, which read as "wrong brand" rather than "loading".
+    setState({ loading: true, error: false, results: [], count: 0 });
 
     const priceRange = PRICE_RANGES[price];
 

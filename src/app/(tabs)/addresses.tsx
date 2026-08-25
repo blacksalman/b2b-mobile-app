@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { AddressRemoveIcon, CloseIcon, EditPencilIcon, LocationPinIcon, PlusIcon, SmallBackChevronIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
-import { ADDRESS_SEED, type AddressEntry } from '@/data/account-content';
+import { fetchAddresses, createAddress, updateAddress, deleteAddress, type MedusaAddress, type AddressInput } from '@/lib/medusaAddresses';
 
 type SheetMode = 'add' | 'edit';
 
@@ -23,70 +23,135 @@ interface DraftFields {
 const EMPTY_DRAFT: DraftFields = { name: '', phone: '', biz: '', line: '', landmark: '', pincode: '', city: '', state: '' };
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, the
-// `isAddresses` block, screen_Addresses.html). First build — Account's "My Addresses" tile previously
-// linked to a `StubScreen` placeholder.
+// `isAddresses` block, screen_Addresses.html) — same card/sheet layout as the original mock build,
+// now backed by the real /store/customers/me/addresses CRUD (docs/STORE_API.md section 8) instead
+// of a local seeded list. Field mapping: the sheet's single "Receiver Name" field splits into
+// Medusa's first_name/last_name on save (same split used by auth/register.tsx); "biz"
+// (Clinic/Pharmacy Name) maps to `company`; "line"/"landmark" map to `address_1`/`address_2`;
+// "pincode"/"city"/"state" map to `postal_code`/`city`/`province`. "Select this address" now
+// really means `is_default_shipping` - Checkout reads that flag to pick which saved address
+// pre-fills the order.
 //
-// Unlike Account's round, this screen's full DCLogic (source lines 2540-2731: `addresses` seed,
-// `select`/`edit`/`remove`, `addrSheetOpen`/`openAddAddress`/`saveAddress`) sat entirely IN RANGE of
-// the 256KB `get_file` cap — read directly, nothing inferred. `ADDRESS_SEED` in `account-content.ts`
-// is the exact seeded data (both entries are the same contact, 'Tom', at two different pharmacy/clinic
-// locations), replacing that round's flagged placeholder count.
-//
-// Source quirks preserved verbatim, not "fixed": `openAddAddress` pre-fills the name/phone fields with
-// the seed contact even in ADD mode (only biz/line/landmark/pincode/city/state start blank); the back
-// button routes to Account specifically (`goAccount`), not a generic back; `remove` deletes immediately
-// with no confirmation; there's no defined empty state for a fully-emptied list (the source's `sc-for`
-// just renders nothing) — not invented here either; City/State fields render on a `canvas` background
-// while every other field is `surface` (visual-only distinction in the source, not disabled inputs).
+// Source quirks preserved: the back button routes to Account specifically (`goAccount`), not a
+// generic back; `remove` deletes immediately with no confirmation; there's no defined empty state
+// for a fully-emptied list; City/State fields render on a `canvas` background while every other
+// field is `surface` (visual-only distinction, not disabled inputs). The old mock-only quirk of
+// pre-filling Add mode with a hardcoded seed contact is dropped - a real Add form starts blank.
 export default function AddressesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { flash } = useAppState();
 
-  const [addresses, setAddresses] = useState<AddressEntry[]>(ADDRESS_SEED);
-  const [selectedId, setSelectedId] = useState(ADDRESS_SEED[0]?.id ?? 1);
+  const [addresses, setAddresses] = useState<MedusaAddress[]>([]);
+  const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [mode, setMode] = useState<SheetMode>('add');
-  const [editId, setEditId] = useState<number | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftFields>(EMPTY_DRAFT);
+  const [saving, setSaving] = useState(false);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    fetchAddresses()
+      .then(setAddresses)
+      .catch(() => flash('Could not load your addresses'))
+      .finally(() => setLoading(false));
+  }, [flash]);
+
+  useEffect(reload, [reload]);
 
   const goAccount = () => router.push('/account');
 
   const openAdd = () => {
     setMode('add');
     setEditId(null);
-    // Ported verbatim (source line 2718): pre-fills the seed contact's name/phone even in add mode.
-    setDraft({ ...EMPTY_DRAFT, name: 'Tom', phone: '+91 9656950687' });
+    setDraft(EMPTY_DRAFT);
     setSheetOpen(true);
   };
-  const openEdit = (a: AddressEntry) => {
+  const openEdit = (a: MedusaAddress) => {
     setMode('edit');
     setEditId(a.id);
-    setDraft({ name: a.name, phone: a.phone, biz: a.label, line: a.line, landmark: a.landmark, pincode: a.pincode, city: a.city, state: a.state });
+    setDraft({
+      name: [a.first_name, a.last_name].filter(Boolean).join(' '),
+      phone: a.phone ?? '',
+      biz: a.company ?? '',
+      line: a.address_1,
+      landmark: a.address_2 ?? '',
+      pincode: a.postal_code,
+      city: a.city,
+      state: a.province ?? '',
+    });
     setSheetOpen(true);
   };
   const closeSheet = () => setSheetOpen(false);
-  const removeAddress = (id: number) => setAddresses((list) => list.filter((a) => a.id !== id));
-  const selectAddress = (id: number) => setSelectedId(id);
+  const removeAddress = async (id: string) => {
+    setAddresses((list) => list.filter((a) => a.id !== id));
+    try {
+      await deleteAddress(id);
+    } catch {
+      flash('Could not remove that address');
+      reload();
+    }
+  };
+  const selectAddress = async (id: string) => {
+    const target = addresses.find((a) => a.id === id);
+    if (!target) return;
+    setAddresses((list) => list.map((a) => ({ ...a, is_default_shipping: a.id === id })));
+    try {
+      await updateAddress(id, {
+        first_name: target.first_name ?? '',
+        last_name: target.last_name ?? undefined,
+        company: target.company ?? undefined,
+        address_1: target.address_1,
+        address_2: target.address_2 ?? undefined,
+        city: target.city,
+        province: target.province ?? undefined,
+        postal_code: target.postal_code,
+        phone: target.phone ?? undefined,
+        is_default_shipping: true,
+      });
+    } catch {
+      flash('Could not update your default address');
+      reload();
+    }
+  };
 
   const setField = <K extends keyof DraftFields>(key: K, value: string) => setDraft((d) => ({ ...d, [key]: value }));
 
-  const saveAddress = () => {
-    const f: AddressEntry = {
-      id: editId ?? Date.now(),
-      name: draft.name,
-      phone: draft.phone,
-      label: draft.biz,
-      line: draft.line,
-      landmark: draft.landmark,
-      pincode: draft.pincode,
-      city: draft.city,
-      state: draft.state,
+  const saveAddress = async () => {
+    if (saving) return;
+    setSaving(true);
+    const [firstName, ...rest] = draft.name.trim().split(/\s+/).filter(Boolean);
+    // A brand new first-ever address becomes the default automatically; editing an existing one
+    // keeps whatever its default-shipping status already was, rather than silently demoting it.
+    const editingTarget = mode === 'edit' && editId ? addresses.find((a) => a.id === editId) : undefined;
+    const isDefaultShipping = mode === 'edit' ? (editingTarget?.is_default_shipping ?? false) : addresses.length === 0;
+    const input: AddressInput = {
+      first_name: firstName || draft.name.trim(),
+      last_name: rest.join(' ') || undefined,
+      company: draft.biz.trim() || undefined,
+      address_1: draft.line.trim(),
+      address_2: draft.landmark.trim() || undefined,
+      city: draft.city.trim(),
+      province: draft.state.trim() || undefined,
+      postal_code: draft.pincode.trim(),
+      phone: draft.phone.trim() || undefined,
+      is_default_shipping: isDefaultShipping,
     };
-    setAddresses((list) => (mode === 'edit' ? list.map((a) => (a.id === f.id ? f : a)) : list.concat(f)));
-    if (mode === 'add') setSelectedId(f.id);
-    setSheetOpen(false);
-    flash(mode === 'edit' ? 'Address updated' : 'Address added');
+    try {
+      if (mode === 'edit' && editId) {
+        await updateAddress(editId, input);
+      } else {
+        await createAddress(input);
+      }
+      setSheetOpen(false);
+      flash(mode === 'edit' ? 'Address updated' : 'Address added');
+      reload();
+    } catch {
+      flash('Could not save that address');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const sheetTitle = mode === 'edit' ? 'Edit Address' : 'Add New Address';
@@ -108,8 +173,20 @@ export default function AddressesScreen() {
       </View>
 
       <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+        {loading && (
+          <View style={styles.loadingState}>
+            <ActivityIndicator color={ds.primaryInk} />
+          </View>
+        )}
+        {!loading && addresses.length === 0 && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No saved addresses yet</Text>
+            <Text style={styles.emptyBody}>Add one to speed up checkout.</Text>
+          </View>
+        )}
         {addresses.map((a) => {
-          const selected = a.id === selectedId;
+          const selected = a.is_default_shipping;
+          const name = [a.first_name, a.last_name].filter(Boolean).join(' ');
           return (
             <View key={a.id} style={[styles.card, { borderColor: selected ? ds.primary : ds.line }]}>
               <View style={styles.cardTop}>
@@ -117,7 +194,7 @@ export default function AddressesScreen() {
                   <View style={styles.pinCircle}>
                     <LocationPinIcon size={15} color={ds.primaryInk} strokeWidth={1.7} />
                   </View>
-                  <Text style={styles.cardTitle} numberOfLines={1}>{a.label} - {a.name}</Text>
+                  <Text style={styles.cardTitle} numberOfLines={1}>{a.company ? `${a.company} - ` : ''}{name}</Text>
                 </View>
                 <View style={styles.cardActions}>
                   <Pressable onPress={() => openEdit(a)} style={styles.iconButton} hitSlop={4}>
@@ -129,7 +206,7 @@ export default function AddressesScreen() {
                 </View>
               </View>
               <Text style={styles.cardBody}>
-                {a.line}{'\n'}{a.city}, {a.state} {a.pincode}{'\n'}Phone: {a.phone}
+                {a.address_1}{'\n'}{a.city}, {a.province} {a.postal_code}{'\n'}Phone: {a.phone}
               </Text>
               <View style={styles.divider} />
               <View style={styles.selectRow}>
@@ -191,8 +268,8 @@ export default function AddressesScreen() {
             </View>
           </ScrollView>
           <View style={styles.sheetFooter}>
-            <Pressable onPress={saveAddress} style={styles.sheetCta}>
-              <Text style={styles.sheetCtaText}>{sheetCta}</Text>
+            <Pressable onPress={saveAddress} disabled={saving} style={[styles.sheetCta, saving && styles.sheetCtaDisabled]}>
+              {saving ? <ActivityIndicator color={ds.surface} /> : <Text style={styles.sheetCtaText}>{sheetCta}</Text>}
             </Pressable>
           </View>
         </View>
@@ -264,6 +341,10 @@ const styles = StyleSheet.create({
 
   body: { flex: 1 },
   bodyContent: { padding: dsSpacing.lg, gap: dsSpacing.md, paddingBottom: dsSpacing.xl },
+  loadingState: { paddingTop: dsSpacing.xl + dsSpacing.lg, alignItems: 'center' },
+  emptyState: { paddingTop: dsSpacing.xl + dsSpacing.lg, alignItems: 'center' },
+  emptyTitle: { fontFamily: dsFontFamily[600], fontSize: 16, lineHeight: 22, letterSpacing: -0.16, color: ds.ink },
+  emptyBody: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink2, marginTop: 4 },
 
   card: { backgroundColor: ds.surface, borderWidth: 1.6, borderRadius: dsRadii.button, padding: dsSpacing.md },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: dsSpacing.sm },
@@ -353,5 +434,6 @@ const styles = StyleSheet.create({
   fieldHalf: { flex: 1, minWidth: 0 },
   sheetFooter: { borderTopWidth: 1, borderTopColor: ds.line, padding: dsSpacing.md, paddingHorizontal: dsSpacing.lg },
   sheetCta: { height: 48, borderRadius: dsRadii.button, backgroundColor: ds.primaryStrong, alignItems: 'center', justifyContent: 'center' },
+  sheetCtaDisabled: { opacity: 0.7 },
   sheetCtaText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
 });

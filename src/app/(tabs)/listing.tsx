@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -127,7 +127,7 @@ export default function ListingScreen() {
 
         <View style={styles.countRow}>
           <Text style={styles.countTitle}>Products</Text>
-          <Text style={styles.countMeta}>{itemCount} items</Text>
+          <Text style={styles.countMeta}>{isReal && productsState.loading ? 'Loading…' : `${itemCount} items`}</Text>
         </View>
 
         {hasActiveFilters && !query && (
@@ -146,20 +146,26 @@ export default function ListingScreen() {
           </ScrollView>
         )}
 
-        <View style={styles.grid}>
-          {listingProducts.map((p) => (
-            <DsProductCard
-              key={p.id}
-              product={p}
-              width="48%"
-              onOpen={() => openProduct(p)}
-              onAdd={() => (isReal ? addApiProduct(p) : addProduct(p.id))}
-              onInc={() => (isReal ? incApiProduct(p) : inc(p.id))}
-              onDec={() => (isReal ? decApiProduct(p) : dec(p.id))}
-              onLogin={goLogin}
-            />
-          ))}
-        </View>
+        {isReal && productsState.loading ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator color={ds.primaryInk} />
+          </View>
+        ) : (
+          <View style={styles.grid}>
+            {listingProducts.map((p) => (
+              <DsProductCard
+                key={p.id}
+                product={p}
+                width="48%"
+                onOpen={() => openProduct(p)}
+                onAdd={() => (isReal ? addApiProduct(p) : addProduct(p.id))}
+                onInc={() => (isReal ? incApiProduct(p) : inc(p.id))}
+                onDec={() => (isReal ? decApiProduct(p) : dec(p.id))}
+                onLogin={goLogin}
+              />
+            ))}
+          </View>
+        )}
       </ScrollView>
 
       <FilterSheet
@@ -235,4 +241,5 @@ const styles = StyleSheet.create({
   pillRemove: { width: 20, height: 20, borderRadius: dsRadii.pill, backgroundColor: 'rgba(15,71,51,.14)', alignItems: 'center', justifyContent: 'center' },
   clearAll: { ...dsType.label, color: ds.accent, paddingHorizontal: 4 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: dsSpacing.md, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.lg },
+  loadingState: { paddingTop: dsSpacing.xl + dsSpacing.lg, alignItems: 'center' },
 });

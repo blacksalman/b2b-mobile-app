@@ -48,6 +48,23 @@ export function registerApiProductVariant(hashId: number, variantId: string): vo
   variantIdByHashId.set(hashId, variantId);
 }
 
+// Exposed for Checkout - it needs the same real cart id every other add/inc/dec on this device
+// already resolves to, to run the shipping/payment/complete sequence against it.
+export function getCartId(): Promise<string> {
+  return ensureCartId();
+}
+
+// Called right after a cart is completed into a real order (checkout.tsx) - a completed cart
+// can't be added to again, so this drops the persisted id and local line-item/variant maps and
+// lets the next add-to-cart create a fresh one, same as hydrateCartState already does when it
+// finds a stale completed cart on app boot.
+export async function resetCartAfterOrder(): Promise<void> {
+  await AsyncStorage.removeItem(CART_ID_STORAGE_KEY);
+  cartIdPromise = null;
+  lineItemIdByHashId.clear();
+  variantIdByHashId.clear();
+}
+
 // Fire-and-forget: the caller has already updated local cart state optimistically (same as
 // every other add/inc/dec in this app today), so a sync failure here is logged, not surfaced -
 // mirrors the backend's own "notify, don't block" convention for non-critical side effects.

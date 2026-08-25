@@ -3,6 +3,7 @@ import type { CartState } from '@/data/types';
 import type { FilterTabName } from '@/data/categories-content';
 import { computeCartTotals, type CartTotals } from '@/data/cartTotals';
 import { hydrateCartState } from '@/data/cartSync';
+import { hydrateToken, fetchCurrentCustomer, logout as logoutCustomer, type MedusaCustomer } from '@/lib/medusaAuth';
 
 export type FilterMultiKind = 'avail' | 'brand' | 'ing' | 'concern' | 'form';
 
@@ -40,6 +41,7 @@ interface AppState {
   cart: CartState;
   wish: number[];
   loggedIn: boolean;
+  customer: MedusaCustomer | null;
   toast: string;
   filters: FilterSelections;
   filterOpen: boolean;
@@ -50,6 +52,7 @@ const initialState: AppState = {
   cart: {},
   wish: [2, 3, 7],
   loggedIn: false,
+  customer: null,
   toast: '',
   filters: DEFAULT_FILTERS,
   filterOpen: false,
@@ -62,7 +65,9 @@ type Action =
   | { type: 'DEC'; id: number }
   | { type: 'REMOVE_FROM_CART'; id: number }
   | { type: 'SET_CART'; cart: CartState }
+  | { type: 'CLEAR_CART' }
   | { type: 'SET_LOGGED_IN'; value: boolean }
+  | { type: 'SET_CUSTOMER'; customer: MedusaCustomer | null }
   | { type: 'SHOW_TOAST'; message: string }
   | { type: 'HIDE_TOAST' }
   | { type: 'SET_FILTER_OPEN'; value: boolean }
@@ -87,12 +92,19 @@ function reducer(state: AppState, action: Action): AppState {
     // was added locally in the brief window before the hydrate fetch resolves.
     case 'SET_CART':
       return { ...state, cart: { ...state.cart, ...action.cart } };
+    // Full reset, not a merge - used once a real order is placed (checkout.tsx) since the Medusa
+    // cart that backed every one of these quantities has just been completed into an order and no
+    // longer exists to sync against; SET_CART's merge semantics would leave stale quantities behind.
+    case 'CLEAR_CART':
+      return { ...state, cart: {} };
     case 'DEC':
       return { ...state, cart: { ...state.cart, [action.id]: Math.max(0, (state.cart[action.id] || 0) - 1) } };
     case 'REMOVE_FROM_CART':
       return { ...state, cart: { ...state.cart, [action.id]: 0 } };
     case 'SET_LOGGED_IN':
       return { ...state, loggedIn: action.value };
+    case 'SET_CUSTOMER':
+      return { ...state, customer: action.customer, loggedIn: !!action.customer };
     case 'SHOW_TOAST':
       return { ...state, toast: action.message };
     case 'HIDE_TOAST':
@@ -125,7 +137,10 @@ interface AppStateContextValue extends AppState {
   inc: (id: number) => void;
   dec: (id: number) => void;
   removeFromCart: (id: number) => void;
+  clearCart: () => void;
   setLoggedIn: (value: boolean) => void;
+  login: (customer: MedusaCustomer) => void;
+  logoutUser: () => Promise<void>;
   flash: (message: string) => void;
   cartCases: number;
   cartTotals: CartTotals;
@@ -166,6 +181,21 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Restore the real customer session (see medusaAuth.ts) - a no-op (stays logged out) when
+  // there's no stored token yet, or when the stored token has since expired/been invalidated
+  // (fetchCurrentCustomer clears a bad token itself and resolves null).
+  useEffect(() => {
+    let cancelled = false;
+    hydrateToken()
+      .then(() => fetchCurrentCustomer())
+      .then((customer) => {
+        if (!cancelled && customer) dispatch({ type: 'SET_CUSTOMER', customer });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const flash = useCallback((message: string) => {
     dispatch({ type: 'SHOW_TOAST', message });
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -176,7 +206,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const inc = useCallback((id: number) => dispatch({ type: 'INC', id }), []);
   const dec = useCallback((id: number) => dispatch({ type: 'DEC', id }), []);
   const removeFromCart = useCallback((id: number) => dispatch({ type: 'REMOVE_FROM_CART', id }), []);
+  const clearCart = useCallback(() => dispatch({ type: 'CLEAR_CART' }), []);
   const setLoggedIn = useCallback((value: boolean) => dispatch({ type: 'SET_LOGGED_IN', value }), []);
+  const login = useCallback((customer: MedusaCustomer) => dispatch({ type: 'SET_CUSTOMER', customer }), []);
+  const logoutUser = useCallback(async () => {
+    await logoutCustomer();
+    dispatch({ type: 'SET_CUSTOMER', customer: null });
+  }, []);
 
   const setFilterOpen = useCallback((value: boolean) => dispatch({ type: 'SET_FILTER_OPEN', value }), []);
   const setFilterTab = useCallback((tab: FilterTabName) => dispatch({ type: 'SET_FILTER_TAB', tab }), []);
@@ -230,7 +266,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       inc,
       dec,
       removeFromCart,
+      clearCart,
       setLoggedIn,
+      login,
+      logoutUser,
       flash,
       cartCases,
       cartTotals,
@@ -249,7 +288,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       inc,
       dec,
       removeFromCart,
+      clearCart,
       setLoggedIn,
+      login,
+      logoutUser,
       flash,
       cartCases,
       cartTotals,

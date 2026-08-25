@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { ArrowRightIcon, CloseIcon, LeafMarkIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
+import { sendOtp } from '@/lib/medusaAuth';
+import { toE164 } from '@/lib/phoneFormat';
 
 // Built against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, the
 // `isAuthPhone` block, screen_AuthPhone.html — fully in range, read directly). First of the 3-screen
@@ -24,10 +26,22 @@ export default function AuthPhoneScreen() {
   const insets = useSafeAreaInsets();
   const { flash } = useAppState();
   const [authPhone, setAuthPhone] = useState('');
+  const [sending, setSending] = useState(false);
 
   const goAccount = () => router.push('/account');
   const onAuthPhone = (v: string) => setAuthPhone(v.replace(/\D/g, '').slice(0, 10));
-  const sendOtp = () => router.push({ pathname: '/auth/otp', params: { phone: authPhone } });
+  const submitPhone = async () => {
+    if (authPhone.length !== 10 || sending) return;
+    setSending(true);
+    try {
+      await sendOtp(toE164(authPhone));
+      router.push({ pathname: '/auth/otp', params: { phone: authPhone } });
+    } catch {
+      flash('Could not send the code. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
   const openContact = () => flash('Contact Us');
   const openPolicyTerms = () => flash('Terms & Conditions');
   const openPolicyPrivacy = () => flash('Privacy Policy');
@@ -63,9 +77,15 @@ export default function AuthPhoneScreen() {
           </View>
         </View>
 
-        <Pressable onPress={sendOtp} style={styles.ctaButton}>
-          <Text style={styles.ctaButtonText}>Send verification code</Text>
-          <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
+        <Pressable onPress={submitPhone} disabled={sending} style={[styles.ctaButton, sending && styles.ctaButtonDisabled]}>
+          {sending ? (
+            <ActivityIndicator color={ds.surface} />
+          ) : (
+            <>
+              <Text style={styles.ctaButtonText}>Send verification code</Text>
+              <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
+            </>
+          )}
         </Pressable>
 
         <Text style={styles.troubleText}>
@@ -140,6 +160,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: dsSpacing.sm,
   },
+  ctaButtonDisabled: { opacity: 0.7 },
   ctaButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
 
   troubleText: { fontFamily: dsFontFamily[400], fontSize: 13, lineHeight: 19, color: ds.ink2, marginTop: dsSpacing.md },

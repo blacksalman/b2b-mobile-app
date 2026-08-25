@@ -11,18 +11,13 @@ import { useAppState } from '@/state/AppStateContext';
 import {
   buyerReviews,
   doctorTalks,
-  fastMoving,
-  getBuyAgain,
   promoBanners,
 } from '@/data/home-content';
-import { productById, productIdsByCategory } from '@/data/products';
+import { productIdsByCategory } from '@/data/products';
 import { useHomeApiData, toRailProduct, type ApiCategoryTile, type ApiBrand } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
+import { useBuyAgainProducts } from '@/data/ordersApi';
 import { productHref } from '@/data/idHash';
-
-function addFlashLabel(name: string): string {
-  return name.split(' ').slice(0, 2).join(' ') + ' added';
-}
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isHome
 // block, line 40-452). Every section below is in the source's exact order; sections whose content
@@ -31,14 +26,21 @@ function addFlashLabel(name: string): string {
 // — same fidelity approach as every previous screen in this app.
 export default function HomeScreen() {
   const router = useRouter();
-  const { cart, loggedIn, addToCart, inc, dec, flash } = useAppState();
+  const { cart, loggedIn } = useAppState();
 
-  const buyAgain = useMemo(() => getBuyAgain(cart, loggedIn), [cart, loggedIn]);
+  // Real order history (GET /store/orders, see ordersApi.ts) - up to the 10 most recently
+  // ordered distinct products, current price/thumbnail/handle re-hydrated same as every other
+  // real rail. Empty (and the whole section hidden) whenever there's no real order to derive it
+  // from - logged out, or logged in with no past orders yet.
+  const buyAgainApi = useBuyAgainProducts(loggedIn);
+  const buyAgain = useMemo(
+    () => buyAgainApi.products.map((p) => toRailProduct(p, cart, loggedIn)),
+    [buyAgainApi.products, cart, loggedIn]
+  );
 
-  // Best sellers / New arrivals / Featured / Concern shelves / category tiles / brands / hero
-  // banners are all backed by the real backend now (product-sections, category-sections,
-  // collections, banners) - see useHomeApiData. Buy again and Fast-moving offers stay on
-  // home-content.ts's mock data, deferred pending a decision with the doctor.
+  // Best sellers / New arrivals / Featured / Fast-moving offers / Concern shelves / category
+  // tiles / brands / hero banners are all backed by the real backend now (product-sections,
+  // category-sections, collections, banners) - see useHomeApiData.
   const apiData = useHomeApiData();
   const bestSellers = useMemo(
     () => apiData.bestSellers.map((p) => toRailProduct(p, cart, loggedIn)),
@@ -52,6 +54,10 @@ export default function HomeScreen() {
     () => apiData.featured.map((p) => toRailProduct(p, cart, loggedIn)),
     [apiData.featured, cart, loggedIn]
   );
+  const fastMoving = useMemo(
+    () => apiData.fastMoving.map((p) => toRailProduct(p, cart, loggedIn)),
+    [apiData.fastMoving, cart, loggedIn]
+  );
   const concerns = useMemo(
     () =>
       apiData.concernShelves.map((c) => ({
@@ -62,13 +68,8 @@ export default function HomeScreen() {
   );
 
   const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
-  const addProduct = (id: number) => {
-    const p = productById(id);
-    addToCart(id, 1);
-    if (p) flash(addFlashLabel(p.name));
-  };
-  // API-sourced rails (Best sellers/New arrivals/Featured/Concern shelves): shared with Search
-  // - see useApiCartActions for why this differs from addProduct above.
+  // Every real rail on this screen (Best sellers/New arrivals/Featured/Fast-moving/Concern
+  // shelves/Buy again) shares these - see useApiCartActions for the real-cart-sync behavior.
   const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
   const goLogin = () => router.push('/account');
   const goCategories = () => router.push('/categories');
@@ -152,50 +153,66 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Fast-moving offers */}
-        <DsSectionHeader title="Fast-moving offers" subtitle="Price, pack and use case in one glance" />
-        <View style={styles.fastMovingList}>
-          {fastMoving.map((m) => {
-            const qty = cart[m.pid] || 0;
-            const inCart = qty > 0;
-            return (
-              <View key={m.pid} style={styles.fastMovingRow}>
-                <Pressable onPress={() => openProduct({ id: m.pid })} style={styles.fastMovingPhoto}>
-                  <Text style={styles.fastMovingPhotoLabel}>photo</Text>
-                </Pressable>
-                <View style={styles.fastMovingInfo}>
-                  <Pressable onPress={() => openProduct({ id: m.pid })}>
-                    <Text style={styles.fastMovingName} numberOfLines={1}>{m.name}</Text>
-                  </Pressable>
-                  <Text style={styles.fastMovingUseCase} numberOfLines={1}>{m.useCase}</Text>
-                  <Text style={styles.fastMovingPrice}>{m.price}</Text>
-                </View>
-                {inCart ? (
-                  <View style={styles.fastMovingStepper}>
-                    <Pressable onPress={() => dec(m.pid)} style={styles.fastMovingStepperBtn} hitSlop={4}>
-                      {qty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
+        {/* Fast-moving offers - original row-list UI, now backed by product-sections slug
+            "fast-moving-offer" instead of mock data. The source design's row shows a per-product
+            "use case" label (Grahani/Vyanga/Khalitya) that was hand-picked mock copy with no real
+            backend equivalent - real products show their actual category there instead (hidden
+            entirely when a product has no category), everything else (photo, name, price, add/
+            stepper) is the real product. */}
+        {fastMoving.length > 0 && (
+          <>
+            <DsSectionHeader title="Fast-moving offers" subtitle="Price, pack and use case in one glance" />
+            <View style={styles.fastMovingList}>
+              {fastMoving.map((p) => {
+                const qty = p.cartQty;
+                const inCart = qty > 0;
+                // Same hasDiscount gate as DsProductCard - a struck MRP/discount chip is only
+                // genuine when the product actually has one (p.cmp set); decorateProduct's
+                // compareLabel falls back to a fabricated price*1.18 otherwise, so gate on cmp
+                // directly rather than trusting compareLabel to always be meaningful.
+                const hasDiscount = !!p.cmp;
+                return (
+                  <View key={p.id} style={styles.fastMovingRow}>
+                    <Pressable onPress={() => openProduct(p)} style={styles.fastMovingPhoto}>
+                      {p.thumbnail ? (
+                        <Image source={{ uri: p.thumbnail }} style={styles.fastMovingImage} contentFit="contain" />
+                      ) : (
+                        <Text style={styles.fastMovingPhotoLabel}>photo</Text>
+                      )}
+                      {hasDiscount && <Text style={styles.fastMovingDiscountChip}>{p.discount}</Text>}
                     </Pressable>
-                    <Text style={styles.fastMovingQty}>{qty}</Text>
-                    <Pressable onPress={() => inc(m.pid)} style={styles.fastMovingStepperBtn} hitSlop={4}>
-                      <Text style={styles.stepperGlyph}>+</Text>
-                    </Pressable>
+                    <View style={styles.fastMovingInfo}>
+                      <Pressable onPress={() => openProduct(p)}>
+                        <Text style={styles.fastMovingName} numberOfLines={1}>{p.name}</Text>
+                      </Pressable>
+                      {!!p.cat && <Text style={styles.fastMovingUseCase} numberOfLines={1}>{p.cat}</Text>}
+                      <View style={styles.fastMovingPriceRow}>
+                        <Text style={styles.fastMovingPrice}>{p.priceLabel}</Text>
+                        {hasDiscount && <Text style={styles.fastMovingCompare}>{p.compareLabel}</Text>}
+                      </View>
+                    </View>
+                    {inCart ? (
+                      <View style={styles.fastMovingStepper}>
+                        <Pressable onPress={() => decApiProduct(p)} style={styles.fastMovingStepperBtn} hitSlop={4}>
+                          {qty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
+                        </Pressable>
+                        <Text style={styles.fastMovingQty}>{qty}</Text>
+                        <Pressable onPress={() => incApiProduct(p)} style={styles.fastMovingStepperBtn} hitSlop={4}>
+                          <Text style={styles.stepperGlyph}>+</Text>
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <Pressable onPress={() => addApiProduct(p)} style={styles.fastMovingAdd}>
+                        <CartIcon size={14} color={ds.surface} />
+                        <Text style={styles.fastMovingAddText}>Add</Text>
+                      </Pressable>
+                    )}
                   </View>
-                ) : (
-                  <Pressable
-                    onPress={() => {
-                      addToCart(m.pid, 1);
-                      flash(m.name + ' added');
-                    }}
-                    style={styles.fastMovingAdd}
-                  >
-                    <CartIcon size={14} color={ds.surface} />
-                    <Text style={styles.fastMovingAddText}>Add</Text>
-                  </Pressable>
-                )}
-              </View>
-            );
-          })}
-        </View>
+                );
+              })}
+            </View>
+          </>
+        )}
 
         {/* Explore full catalogue CTA */}
         <Pressable onPress={goCategories} style={styles.catalogueBand}>
@@ -228,22 +245,28 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Buy again */}
-        <DsSectionHeader title="Buy again" subtitle="Ordered at least twice in the last 90 days" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-          {buyAgain.map((p) => (
-            <DsProductCard
-              key={p.id}
-              product={p}
-              width={166}
-              onOpen={() => openProduct(p)}
-              onAdd={() => addProduct(p.id)}
-              onInc={() => inc(p.id)}
-              onDec={() => dec(p.id)}
-              onLogin={goLogin}
-            />
-          ))}
-        </ScrollView>
+        {/* Buy again - real GET /store/orders data (ordersApi.ts), hidden entirely when logged
+            out or when the logged-in customer has no past orders yet - no mock/placeholder
+            fallback. */}
+        {buyAgain.length > 0 && (
+          <>
+            <DsSectionHeader title="Buy again" subtitle="From your recent orders" />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+              {buyAgain.map((p) => (
+                <DsProductCard
+                  key={p.id}
+                  product={p}
+                  width={166}
+                  onOpen={() => openProduct(p)}
+                  onAdd={() => addApiProduct(p)}
+                  onInc={() => incApiProduct(p)}
+                  onDec={() => decApiProduct(p)}
+                  onLogin={goLogin}
+                />
+              ))}
+            </ScrollView>
+          </>
+        )}
 
         {/* Brands to know - backed by the real "AYURVEDA ONE PVT LTD." / "AYUR VIBES" collections;
             skus is each collection's real product count (GET /store/products-search?collection_id
@@ -494,12 +517,30 @@ const styles = StyleSheet.create({
     gap: dsSpacing.md,
     ...dsElevation.e1,
   },
-  fastMovingPhoto: { width: 72, height: 72, borderRadius: dsRadii.input, backgroundColor: ds.primarySoft, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 4 },
+  fastMovingPhoto: { width: 72, height: 72, borderRadius: dsRadii.input, backgroundColor: ds.primarySoft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  fastMovingImage: { width: '100%', height: '100%' },
   fastMovingPhotoLabel: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3 },
+  fastMovingDiscountChip: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    fontFamily: dsFontFamily[600],
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 0.18,
+    backgroundColor: ds.surface,
+    color: ds.primaryInk,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: dsRadii.chip,
+    overflow: 'hidden',
+  },
   fastMovingInfo: { flex: 1, minWidth: 0 },
   fastMovingName: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
   fastMovingUseCase: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
-  fastMovingPrice: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.primaryInk, marginTop: dsSpacing.sm },
+  fastMovingPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: dsSpacing.sm },
+  fastMovingPrice: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.primaryInk },
+  fastMovingCompare: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, textDecorationLine: 'line-through' },
   fastMovingAdd: {
     height: 40,
     borderRadius: dsRadii.button,

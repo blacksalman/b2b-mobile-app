@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,7 +16,8 @@ import {
   SmallBackChevronIcon,
 } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
-import { ACCOUNT_ADDRESS_COUNT_SEED, POLICIES, POLICY_ROW_KEYS, accountProfile, addressCountLabel } from '@/data/account-content';
+import { POLICIES, POLICY_ROW_KEYS, addressCountLabel } from '@/data/account-content';
+import { fetchAddresses } from '@/lib/medusaAddresses';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, the
 // `isAccount` block, screen_Account.html). This is a first build, not a migration — the old
@@ -37,15 +38,33 @@ import { ACCOUNT_ADDRESS_COUNT_SEED, POLICIES, POLICY_ROW_KEYS, accountProfile, 
 export default function AccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { loggedIn, setLoggedIn } = useAppState();
+  const { loggedIn, customer, logoutUser } = useAppState();
   const [policyKey, setPolicyKey] = useState<string | null>(null);
+  const [addressCount, setAddressCount] = useState(0);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+    let cancelled = false;
+    fetchAddresses()
+      .then((addresses) => {
+        if (!cancelled) setAddressCount(addresses.length);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [loggedIn]);
+
+  const fullName = [customer?.first_name, customer?.last_name].filter(Boolean).join(' ') || 'Your account';
+  const initials =
+    [customer?.first_name?.[0], customer?.last_name?.[0]].filter(Boolean).join('').toUpperCase() || 'A';
 
   const goHome = () => router.push('/');
   const goOrders = () => router.push('/orders');
   const goAddresses = () => router.push('/addresses');
   const goEditProfile = () => router.push('/edit-profile');
   const login = () => router.push('/auth/phone');
-  const logout = () => setLoggedIn(false);
+  const logout = () => logoutUser();
   const openPolicy = (key: string) => setPolicyKey(key);
   const closePolicy = () => setPolicyKey(null);
 
@@ -84,11 +103,11 @@ export default function AccountScreen() {
           <>
             <View style={styles.profileCard}>
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{accountProfile.initials}</Text>
+                <Text style={styles.avatarText}>{initials}</Text>
               </View>
               <View style={styles.profileInfo}>
-                <Text style={styles.profileName}>{accountProfile.name}</Text>
-                <Text style={styles.profilePhone}>{accountProfile.phone}</Text>
+                <Text style={styles.profileName}>{fullName}</Text>
+                <Text style={styles.profilePhone}>{customer?.phone ?? ''}</Text>
               </View>
               <Pressable onPress={goEditProfile} style={styles.roundButton} hitSlop={4}>
                 <EditPencilIcon size={16} color={ds.primaryInk} />
@@ -109,7 +128,7 @@ export default function AccountScreen() {
                   <LocationPinIcon size={17} color={ds.primaryInk} strokeWidth={1.6} />
                 </View>
                 <Text style={styles.menuTileTitle}>My Addresses</Text>
-                <Text style={styles.menuTileSubtitle}>{addressCountLabel(ACCOUNT_ADDRESS_COUNT_SEED)}</Text>
+                <Text style={styles.menuTileSubtitle}>{addressCountLabel(addressCount)}</Text>
               </Pressable>
             </View>
 

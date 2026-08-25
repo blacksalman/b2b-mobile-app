@@ -1,10 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { ArrowRightIcon, LeafMarkIcon, SmallBackChevronIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
+import { sendOtp, verifyOtp, fetchCurrentCustomer } from '@/lib/medusaAuth';
+import { toE164 } from '@/lib/phoneFormat';
 
 // Built against the new AyurvedaOne design system (screen_AuthOtp.html, `isAuthOtp` block — fully in
 // range). Second step of the Auth flow.
@@ -20,16 +22,20 @@ import { useAppState } from '@/state/AppStateContext';
 // matching this design system's §8.6 focus convention already used by every other input built this
 // session) are standard OTP-input UX, not invented business logic or data.
 //
-// `verifyOtp`'s destination is inferred, not read (past the cap too): with exactly 3 auth screens and
-// no separate "returning user" branch anywhere in the extracted markup, Register is the only screen
-// left in the flow — verifyOtp advances there. `resendOtp` clears the 4 digits and flashes a
-// confirmation; no real SMS/OTP verification exists (mock prototype).
+// Real backend behind this screen now (src/modules/auth-phone-otp on the backend, live Kaleyra SMS
+// + Emovur WhatsApp delivery): the same verify call works for both a returning customer and a brand
+// new phone (see medusaAuth.ts's verifyOtp comment for why) - this screen just branches on the
+// result. A returning customer's session is already fully usable the moment this succeeds, so it
+// logs straight in; a new phone gets a registration token good only for the next step and moves on
+// to Register to collect the rest of the profile. The backend's generateOtp (auth-phone-otp/utils.ts)
+// produces a 4-digit code, matching this screen's 4 boxes exactly.
 export default function AuthOtpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { flash } = useAppState();
+  const { flash, login } = useAppState();
   const { phone } = useLocalSearchParams<{ phone?: string }>();
   const [otp, setOtp] = useState(['', '', '', '']);
+  const [verifying, setVerifying] = useState(false);
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
   const authPhoneMasked = (phone || '9198208114').replace(/(\d{3})(\d{3})(\d+)/, '$1-$2-$3');
@@ -44,11 +50,43 @@ export default function AuthOtpScreen() {
     });
     if (d && i < 3) inputRefs.current[i + 1]?.focus();
   };
-  const verifyOtp = () => router.push('/auth/register');
-  const resendOtp = () => {
+  const submitOtp = async () => {
+    if (!phone || verifying) return;
+    const code = otp.join('');
+    if (code.length < 4) return;
+    setVerifying(true);
+    try {
+      const { isNewUser } = await verifyOtp(toE164(phone), code);
+      if (isNewUser) {
+        router.push({ pathname: '/auth/register', params: { phone } });
+        return;
+      }
+      const customer = await fetchCurrentCustomer();
+      if (!customer) {
+        flash('Something went wrong - please try again.');
+        return;
+      }
+      login(customer);
+      flash(`Welcome back${customer.first_name ? ', ' + customer.first_name : ''}`);
+      router.push('/account');
+    } catch {
+      flash('Incorrect or expired code. Please try again.');
+      setOtp(['', '', '', '']);
+      inputRefs.current[0]?.focus();
+    } finally {
+      setVerifying(false);
+    }
+  };
+  const resendOtp = async () => {
     setOtp(['', '', '', '']);
     inputRefs.current[0]?.focus();
-    flash('OTP resent');
+    if (!phone) return;
+    try {
+      await sendOtp(toE164(phone));
+      flash('OTP resent');
+    } catch {
+      flash('Could not resend the code. Please try again.');
+    }
   };
 
   return (
@@ -84,9 +122,15 @@ export default function AuthOtpScreen() {
           ))}
         </View>
 
-        <Pressable onPress={verifyOtp} style={styles.ctaButton}>
-          <Text style={styles.ctaButtonText}>Verify</Text>
-          <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
+        <Pressable onPress={submitOtp} disabled={verifying} style={[styles.ctaButton, verifying && styles.ctaButtonDisabled]}>
+          {verifying ? (
+            <ActivityIndicator color={ds.surface} />
+          ) : (
+            <>
+              <Text style={styles.ctaButtonText}>Verify</Text>
+              <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
+            </>
+          )}
         </Pressable>
 
         <Text style={styles.resendText}>
@@ -151,6 +195,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: dsSpacing.sm,
   },
+  ctaButtonDisabled: { opacity: 0.7 },
   ctaButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
 
   resendText: { fontFamily: dsFontFamily[400], fontSize: 13, lineHeight: 19, color: ds.ink2, marginTop: dsSpacing.md },

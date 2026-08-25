@@ -37,18 +37,6 @@ function decorateWithContext(
   };
 }
 
-// --- Buy again (line 2738) ---
-const BUY_AGAIN_SRC = [P[0], P[9], P[6], P[2], P[1]];
-const BUY_AGAIN_TIMES = [7, 5, 4, 3, 3];
-const BUY_AGAIN_RATING = ['4.5', '4.7', '4.6', '4.4', '4.8'];
-
-export function getBuyAgain(cart: CartState, loggedIn: boolean): (RailProduct & { times: number })[] {
-  return BUY_AGAIN_SRC.map((p, i) => ({
-    ...decorateWithContext(p, cart, loggedIn, BUY_AGAIN_RATING[i]),
-    times: BUY_AGAIN_TIMES[i],
-  }));
-}
-
 // --- Featured (line 2760) — the only rail where the compare-at price is conditional (`hasOffer`) ---
 const FEATURED_SRC = [P[2], P[0], P[5], P[7]];
 const FEATURED_RATING = ['4.7', '4.9', '4.4', '4.2'];

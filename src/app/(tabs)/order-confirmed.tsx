@@ -3,24 +3,27 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-na
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing } from '@/theme';
-import { CheckThinIcon, DeliveryTruckIcon, OrderBoxIcon } from '@/icons';
-import { deliveryAddress } from '@/data/cartTotals';
-import { ORDER_CONFIRMED_ID } from '@/data/orders-content';
+import { CheckThinIcon, OrderBoxIcon } from '@/icons';
 import { money } from '@/utils/money';
 
 // Built against the new AyurvedaOne design system (screen_OrderConfirmed.html, isOrderConfirmed
-// block) — net-new screen, reached from Checkout's payment-success sheet (which previously landed on
-// the `tracking.tsx` stub). Ported verbatim from source lines 3130-3135 (fully in range): the order id
-// is always the constant 29 (`ORDER_CONFIRMED_ID`, shared with `orders-content.ts`), and "View order"
-// (`viewOrder`) navigates to Order Detail with that same id — which isn't in `ORDERS`, so it actually
-// falls back to showing order #24 there (see `findOrder`'s comment). Not fixed, matches source.
+// block), reached from Checkout's real order-placed sheet. `orderId`/`displayId`/`amount` are the
+// real order Checkout just created (POST /store/carts/:id/complete) - no more hardcoded
+// ORDER_CONFIRMED_ID constant. "View order" opens Order Detail for that real order id (My Orders /
+// order-detail screens themselves are still mock/unwired - a separate, later round). Payment
+// method is shown honestly as "Pay on account" rather than a fabricated "UPI"/"PAID" badge: this
+// checkout uses the manual/system payment provider (no online payment collected yet - "I will pay
+// later" decision), so nothing has actually been paid at this point.
 export default function OrderConfirmedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { amount } = useLocalSearchParams<{ amount?: string }>();
+  const { orderId, displayId, amount } = useLocalSearchParams<{ orderId?: string; displayId?: string; amount?: string }>();
   const amountLabel = amount ?? money(0);
+  const displayIdLabel = displayId ?? '';
 
-  const viewOrder = () => router.push(`/orders/${ORDER_CONFIRMED_ID}`);
+  const viewOrder = () => {
+    if (orderId) router.push(`/orders/${orderId}`);
+  };
   const continueShopping = () => router.push('/');
   const callSupport = () => Linking.openURL('tel:08049670477');
 
@@ -31,8 +34,8 @@ export default function OrderConfirmedScreen() {
           <View style={styles.checkCircle}>
             <CheckThinIcon size={28} color={ds.primaryInk} />
           </View>
-          <Text style={styles.heroTitle}>Order confirmed</Text>
-          <Text style={styles.heroSubtitle}>We&apos;ve received order #{ORDER_CONFIRMED_ID} and are getting it ready for dispatch.</Text>
+          <Text style={styles.heroTitle}>Order placed</Text>
+          <Text style={styles.heroSubtitle}>We&apos;ve received order #{displayIdLabel} and are getting it ready for dispatch.</Text>
         </View>
 
         <View style={styles.cardsWrap}>
@@ -45,36 +48,26 @@ export default function OrderConfirmedScreen() {
                 <Text style={styles.cardHeaderTitle}>Order information</Text>
               </View>
               <View style={styles.paidBadge}>
-                <Text style={styles.paidBadgeText}>PAID</Text>
+                <Text style={styles.paidBadgeText}>PLACED</Text>
               </View>
             </View>
             <View style={styles.summaryGrid}>
               <View style={styles.summaryCell}>
                 <Text style={styles.summaryLabel}>Order ID</Text>
-                <Text style={styles.summaryValue}>#{ORDER_CONFIRMED_ID}</Text>
+                <Text style={styles.summaryValue}>#{displayIdLabel}</Text>
               </View>
               <View style={styles.summaryCell}>
-                <Text style={styles.summaryLabel}>Amount paid</Text>
+                <Text style={styles.summaryLabel}>Order total</Text>
                 <Text style={styles.summaryValue}>{amountLabel}</Text>
               </View>
               <View style={styles.summaryCell}>
                 <Text style={styles.summaryLabel}>Payment method</Text>
-                <Text style={styles.summaryValue}>UPI</Text>
+                <Text style={styles.summaryValue}>Pay on account</Text>
               </View>
               <View style={styles.summaryCell}>
                 <Text style={styles.summaryLabel}>Est. delivery</Text>
                 <Text style={styles.summaryValue}>2–3 business days</Text>
               </View>
-            </View>
-          </View>
-
-          <View style={[styles.card, styles.addressCard]}>
-            <View style={styles.iconAvatar}>
-              <DeliveryTruckIcon size={15} color={ds.primaryInk} />
-            </View>
-            <View style={styles.addressText}>
-              <Text style={styles.addressName}>{deliveryAddress.name}</Text>
-              <Text style={styles.addressLine} numberOfLines={1}>{deliveryAddress.line}</Text>
             </View>
           </View>
 
@@ -119,10 +112,6 @@ const styles = StyleSheet.create({
   summaryCell: { width: '46%', flexGrow: 1 },
   summaryLabel: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2 },
   summaryValue: { fontFamily: dsFontFamily[700], fontSize: 15, lineHeight: 20, color: ds.ink, marginTop: 4 },
-  addressCard: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.md },
-  addressText: { flex: 1, minWidth: 0 },
-  addressName: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
-  addressLine: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 2 },
   helpCard: { alignItems: 'center' },
   helpText: { fontFamily: dsFontFamily[400], fontSize: 13, lineHeight: 19, color: ds.ink2 },
   helpLink: { fontFamily: dsFontFamily[700], fontSize: 15, lineHeight: 20, color: ds.inverse, marginTop: 6 },

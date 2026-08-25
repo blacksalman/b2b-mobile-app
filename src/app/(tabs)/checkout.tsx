@@ -1,10 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useCallback, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType, dsElevation } from '@/theme';
 import {
-  AlertCircleIcon,
   ArrowRightIcon,
   ChevronRightIcon,
   CheckThinIcon,
@@ -15,66 +14,186 @@ import {
   ShippingBoxIcon,
   SmallBackChevronIcon,
 } from '@/icons';
-import { deliveryAddress } from '@/data/cartTotals';
 import { useAppState } from '@/state/AppStateContext';
+import { getCartId, resetCartAfterOrder } from '@/data/cartSync';
+import {
+  fetchCart,
+  fetchShippingOptions,
+  addShippingMethod,
+  setCartAddress,
+  createSystemPaymentSession,
+  completeCart,
+  type MedusaCart,
+  type MedusaShippingOption,
+} from '@/lib/medusaCart';
+import { fetchAddresses, type MedusaAddress } from '@/lib/medusaAddresses';
+import { money } from '@/utils/money';
 
-type PaymentStatus = 'processing' | 'success' | 'failed' | 'cancelled';
+type PaymentStatus = 'processing' | 'success' | 'failed';
 
-// Rebuilt against the new AyurvedaOne design system (screen_Checkout.html, isCheckout block). The
-// old 3-card icon-header layout is gone — section headers are now plain text (no icon), and the
-// address/shipping icons moved inside their own cards as circular avatar tiles. Biggest change: the
-// new source added a full payment-status bottom sheet (processing → success/failed/cancelled),
-// replacing the old "just navigate to tracking" placeOrder. Ported verbatim from
-// `placeOrder`/`startPaymentTimer`/`confirmOrder`/`retryPayment` (source lines 2549-2550, 3125-3131):
-// the 1400ms timer always resolves to `paymentStatus:'success'` — the source only branches to
-// failed/cancelled via a `paymentDemoOutcome` prop this app never sets, so those two states are real,
-// fully-built UI that's structurally unreachable in practice, same category as Search's dead voice
-// panel from an earlier round. Also a genuine quirk, not a bug: `retryPayment` does NOT retry — it's
-// wired identically to `confirmOrder` (closes the sheet and jumps straight to order-confirmed), kept
-// exactly as authored.
+// Rebuilt against the new AyurvedaOne design system (screen_Checkout.html, isCheckout block), same
+// layout as the original mock build - now driven by a real Medusa cart (docs/STORE_API.md section
+// 6) instead of the local computeCartTotals fake math. Payment collection uses the built-in
+// "system"/manual provider (pp_system_default) rather than the real Razorpay widget - "I will pay
+// later" decision (Checkout payment scope question) - so this creates a genuinely real order with
+// no online payment collected, closer to a pay-on-account/COD model than a paid checkout. Swapping
+// in the Razorpay widget later only touches placeOrder()'s payment-session call.
 export default function CheckoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { cartTotals, flash } = useAppState();
-  const { cartLines, subtotal, taxAmount, shippingFee, payTotal } = cartTotals;
+  const { loggedIn, customer, clearCart, flash } = useAppState();
+
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [cart, setCart] = useState<MedusaCart | null>(null);
+  const [address, setAddress] = useState<MedusaAddress | null>(null);
+  const [shippingOption, setShippingOption] = useState<MedusaShippingOption | null>(null);
 
   const [paymentSheetOpen, setPaymentSheetOpen] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('processing');
-  const paymentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [orderError, setOrderError] = useState('');
+  const [placedOrder, setPlacedOrder] = useState<{ id: string; display_id: number; total: number } | null>(null);
+  const placing = useRef(false);
 
-  useEffect(() => {
-    return () => {
-      if (paymentTimer.current) clearTimeout(paymentTimer.current);
-    };
-  }, []);
+  const loadCheckout = useCallback(async () => {
+    if (!customer) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const cartId = await getCartId();
+      const addresses = await fetchAddresses();
+      const selected = addresses.find((a) => a.is_default_shipping) ?? addresses[0] ?? null;
+      setAddress(selected);
+
+      if (!selected) {
+        setCart(await fetchCart(cartId));
+        setShippingOption(null);
+        return;
+      }
+
+      let currentCart = await setCartAddress(cartId, customer.email, {
+        first_name: selected.first_name ?? '',
+        last_name: selected.last_name ?? undefined,
+        company: selected.company ?? undefined,
+        address_1: selected.address_1,
+        address_2: selected.address_2 ?? undefined,
+        city: selected.city,
+        province: selected.province ?? undefined,
+        postal_code: selected.postal_code,
+        country_code: selected.country_code,
+        phone: selected.phone ?? undefined,
+      });
+
+      const options = await fetchShippingOptions(cartId);
+      const cheapest = options.length ? options.reduce((min, o) => (o.amount < min.amount ? o : min)) : null;
+      setShippingOption(cheapest);
+
+      // shipping_total > 0 means a shipping method is already attached from an earlier visit to
+      // this screen - re-adding one every time this reloads (e.g. on every focus) would otherwise
+      // double up the shipping line.
+      if (cheapest && currentCart.shipping_total <= 0) {
+        currentCart = await addShippingMethod(cartId, cheapest.id);
+      }
+
+      setCart(currentCart);
+    } catch {
+      setLoadError('Could not load checkout. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [customer]);
+
+  // Re-runs every time this screen regains focus (not just on mount) - Checkout stays mounted
+  // underneath when "Change" pushes /addresses, so picking a different default address there
+  // needs a fresh load on the way back, same reasoning as Search's own useFocusEffect.
+  useFocusEffect(
+    useCallback(() => {
+      loadCheckout();
+    }, [loadCheckout])
+  );
 
   const goCart = () => router.push('/cart');
+  const goAddresses = () => router.push('/addresses');
 
-  // The source's own `placeOrder`/`startPaymentTimer` never target anything but 'success' in this
-  // app (no `paymentDemoOutcome` prop exists here) — preserved verbatim, not "fixed" into a random
-  // outcome roll.
-  const placeOrder = () => {
-    if (paymentTimer.current) clearTimeout(paymentTimer.current);
+  const placeOrder = async () => {
+    if (!cart || placing.current) return;
+    placing.current = true;
+    setOrderError('');
     setPaymentStatus('processing');
     setPaymentSheetOpen(true);
-    paymentTimer.current = setTimeout(() => setPaymentStatus('success'), 1400);
+    try {
+      await createSystemPaymentSession(cart.id);
+      const result = await completeCart(cart.id);
+      if (result.type === 'order') {
+        setPlacedOrder(result.order);
+        await resetCartAfterOrder();
+        clearCart();
+        setPaymentStatus('success');
+      } else {
+        setOrderError(result.error);
+        setPaymentStatus('failed');
+      }
+    } catch {
+      setOrderError('Something went wrong placing your order.');
+      setPaymentStatus('failed');
+    } finally {
+      placing.current = false;
+    }
   };
   const closePaymentSheet = () => setPaymentSheetOpen(false);
-  // `confirmOrder` and `retryPayment` are the same handler in the source — both just close the sheet
-  // and land on Order Confirmed (source lines 3130-3131). Ported verbatim: the order id itself is
-  // always the constant `ORDER_CONFIRMED_ID` (29), never derived from this cart — see
-  // `orders-content.ts`'s comment for why "View order" from that screen then shows order #24, not #29.
+  const retryOrder = () => {
+    setPaymentSheetOpen(false);
+    placeOrder();
+  };
   const goToOrderConfirmed = () => {
     setPaymentSheetOpen(false);
-    router.push({ pathname: '/order-confirmed', params: { amount: payTotal } });
+    if (!placedOrder) return;
+    router.push({
+      pathname: '/order-confirmed',
+      params: { orderId: placedOrder.id, displayId: String(placedOrder.display_id), amount: money(placedOrder.total) },
+    });
   };
 
-  // The new source's Policies rows open a real shared policy-detail sheet (also referenced by the
-  // still-unmigrated Account screen). Building that shared sheet is out of scope for a Checkout-only
-  // round — same deferral the Product round used for "Learn more" — so these are lightweight
-  // placeholders for now rather than dead no-ops.
   const openReturnPolicy = () => flash('Return, Refund and Cancellation Policy');
   const openShippingPolicy = () => flash('Shipping and Delivery Policy');
+
+  if (!loggedIn) {
+    return (
+      <View style={styles.screen}>
+        <View style={[styles.header, { paddingTop: insets.top + dsSpacing.md }]}>
+          <Pressable onPress={goCart} style={styles.backButton} hitSlop={4}>
+            <SmallBackChevronIcon size={9} color={ds.ink} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Checkout</Text>
+        </View>
+        <View style={styles.centerState}>
+          <Text style={styles.centerTitle}>Log in to check out</Text>
+          <Text style={styles.centerBody}>Sign in to your trade account to place a real order.</Text>
+          <Pressable onPress={() => router.push('/auth/phone')} style={styles.centerButton}>
+            <Text style={styles.centerButtonText}>Log in</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  if (loading || !cart) {
+    return (
+      <View style={styles.screen}>
+        <View style={[styles.header, { paddingTop: insets.top + dsSpacing.md }]}>
+          <Pressable onPress={goCart} style={styles.backButton} hitSlop={4}>
+            <SmallBackChevronIcon size={9} color={ds.ink} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Checkout</Text>
+        </View>
+        <View style={styles.centerState}>
+          {loadError ? <Text style={styles.centerBody}>{loadError}</Text> : <ActivityIndicator color={ds.primaryInk} />}
+        </View>
+      </View>
+    );
+  }
+
+  const shippingFeeLabel = shippingOption ? money(shippingOption.amount) : money(cart.shipping_total);
 
   return (
     <View style={styles.screen}>
@@ -89,21 +208,32 @@ export default function CheckoutScreen() {
         <View>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Delivery address</Text>
-            <Text style={styles.changeLink}>Change</Text>
+            <Pressable onPress={goAddresses}>
+              <Text style={styles.changeLink}>{address ? 'Change' : 'Add'}</Text>
+            </Pressable>
           </View>
           <View style={styles.card}>
             <View style={styles.iconAvatar}>
               <LocationPinIcon size={15} color={ds.primaryInk} />
             </View>
-            <View style={styles.addressText}>
-              <Text style={styles.addressName}>{deliveryAddress.name}</Text>
-              <Text style={styles.addressLines}>
-                {deliveryAddress.city}
-                {'\n'}
-                {deliveryAddress.line}
-                {'\n'}Phone: {deliveryAddress.phone}
-              </Text>
-            </View>
+            {address ? (
+              <View style={styles.addressText}>
+                <Text style={styles.addressName}>
+                  {[address.first_name, address.last_name].filter(Boolean).join(' ')}
+                </Text>
+                <Text style={styles.addressLines}>
+                  {address.address_1}
+                  {'\n'}
+                  {address.city}, {address.province} {address.postal_code}
+                  {'\n'}Phone: {address.phone}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.addressText}>
+                <Text style={styles.addressName}>No delivery address yet</Text>
+                <Text style={styles.addressLines}>Add one to place your order.</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -114,44 +244,41 @@ export default function CheckoutScreen() {
               <View style={styles.iconAvatar}>
                 <ShippingBoxIcon size={15} color={ds.primaryInk} />
               </View>
-              <Text style={styles.shippingLabel}>Express shipping</Text>
+              <Text style={styles.shippingLabel}>{shippingOption?.name ?? 'Shipping'}</Text>
             </View>
-            <Text style={styles.shippingValue}>{shippingFee}</Text>
+            <Text style={styles.shippingValue}>{shippingFeeLabel}</Text>
           </View>
         </View>
 
         <View>
           <Text style={[styles.sectionTitle, styles.sectionTitleSpaced]}>Order summary</Text>
           <View style={[styles.card, styles.summaryCard]}>
-            {cartLines.map((line) => (
+            {cart.items.map((line) => (
               <View key={line.id} style={styles.lineRow}>
-                <View style={[styles.lineThumb, { backgroundColor: line.tint }]} />
+                <View style={styles.lineThumb} />
                 <Text style={styles.lineName} numberOfLines={1}>
-                  {line.qty} × {line.name}
+                  {line.quantity} × {line.product_title}
                 </Text>
-                <View style={styles.lineAmounts}>
-                  <Text style={styles.lineTotal}>{line.total}</Text>
-                  {line.hasOffer && <Text style={styles.lineMrp}>{line.mrpTotal}</Text>}
-                </View>
+                <Text style={styles.lineTotal}>{money(line.unit_price * line.quantity)}</Text>
               </View>
             ))}
             <View style={styles.divider} />
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>{subtotal}</Text>
+              <Text style={styles.summaryValue}>{money(cart.subtotal)}</Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Shipping</Text>
-              <Text style={styles.summaryValue}>{shippingFee}</Text>
+              <Text style={styles.summaryValue}>{money(cart.shipping_total)}</Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>GST</Text>
-              <Text style={styles.summaryValue}>{taxAmount}</Text>
+              <Text style={styles.summaryValue}>{money(cart.tax_total)}</Text>
             </View>
             <View style={styles.divider} />
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total amount</Text>
-              <Text style={styles.totalValue}>{payTotal}</Text>
+              <Text style={styles.totalValue}>{money(cart.total)}</Text>
             </View>
           </View>
         </View>
@@ -186,10 +313,14 @@ export default function CheckoutScreen() {
       <View style={[styles.footer, { paddingBottom: dsSpacing.md + insets.bottom }]}>
         <View style={styles.footerInfo}>
           <Text style={styles.footerLabel}>To pay</Text>
-          <Text style={styles.footerTotal} numberOfLines={1}>{payTotal}</Text>
+          <Text style={styles.footerTotal} numberOfLines={1}>{money(cart.total)}</Text>
         </View>
-        <Pressable onPress={placeOrder} style={styles.payButton}>
-          <Text style={styles.payButtonText}>Proceed to payment</Text>
+        <Pressable
+          onPress={placeOrder}
+          disabled={!address || cart.items.length === 0}
+          style={[styles.payButton, (!address || cart.items.length === 0) && styles.payButtonDisabled]}
+        >
+          <Text style={styles.payButtonText}>Place order</Text>
           <ArrowRightIcon size={13} color={ds.surface} strokeWidth={2.2} />
         </Pressable>
       </View>
@@ -203,7 +334,7 @@ export default function CheckoutScreen() {
                 <View style={[styles.statusIcon, { backgroundColor: ds.primarySoft }]}>
                   <ProcessingSparkleIcon size={24} color={ds.primaryStrong} />
                 </View>
-                <Text style={styles.statusTitle}>Processing payment…</Text>
+                <Text style={styles.statusTitle}>Placing your order…</Text>
                 <Text style={styles.statusSubtitle}>Please don&apos;t close or refresh this screen.</Text>
               </>
             )}
@@ -213,8 +344,8 @@ export default function CheckoutScreen() {
                 <View style={[styles.statusIcon, { backgroundColor: ds.primaryStrong }]}>
                   <CheckThinIcon size={24} color={ds.surface} />
                 </View>
-                <Text style={styles.statusTitle}>Payment successful</Text>
-                <Text style={styles.statusSubtitle}>Your payment of {payTotal} went through.</Text>
+                <Text style={styles.statusTitle}>Order placed</Text>
+                <Text style={styles.statusSubtitle}>Your order for {money(cart.total)} has been placed.</Text>
                 <Pressable onPress={goToOrderConfirmed} style={styles.statusButton}>
                   <Text style={styles.statusButtonText}>Continue</Text>
                 </Pressable>
@@ -226,26 +357,10 @@ export default function CheckoutScreen() {
                 <View style={[styles.statusIcon, { backgroundColor: ds.dangerInk }]}>
                   <CloseIcon size={24} color={ds.surface} strokeWidth={3} />
                 </View>
-                <Text style={styles.statusTitle}>Payment failed</Text>
-                <Text style={styles.statusSubtitle}>We couldn&apos;t process your payment. No amount was deducted.</Text>
-                <Pressable onPress={goToOrderConfirmed} style={styles.statusButton}>
-                  <Text style={styles.statusButtonText}>Retry payment</Text>
-                </Pressable>
-                <Pressable onPress={closePaymentSheet} hitSlop={4}>
-                  <Text style={styles.statusCancel}>Cancel</Text>
-                </Pressable>
-              </>
-            )}
-
-            {paymentStatus === 'cancelled' && (
-              <>
-                <View style={[styles.statusIcon, styles.statusIconOutlined]}>
-                  <AlertCircleIcon size={24} color={ds.accent} />
-                </View>
-                <Text style={styles.statusTitle}>Payment cancelled</Text>
-                <Text style={styles.statusSubtitle}>You cancelled the payment before it completed.</Text>
-                <Pressable onPress={goToOrderConfirmed} style={styles.statusButton}>
-                  <Text style={styles.statusButtonText}>Retry payment</Text>
+                <Text style={styles.statusTitle}>Could not place order</Text>
+                <Text style={styles.statusSubtitle}>{orderError || 'Please try again.'}</Text>
+                <Pressable onPress={retryOrder} style={styles.statusButton}>
+                  <Text style={styles.statusButtonText}>Retry</Text>
                 </Pressable>
                 <Pressable onPress={closePaymentSheet} hitSlop={4}>
                   <Text style={styles.statusCancel}>Cancel</Text>
@@ -274,13 +389,18 @@ const styles = StyleSheet.create({
   },
   backButton: { flexShrink: 0, width: 32, height: 32, borderRadius: dsRadii.button, backgroundColor: ds.canvas, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { ...dsType.h2 },
+  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: dsSpacing.lg, gap: dsSpacing.sm },
+  centerTitle: { ...dsType.h2, textAlign: 'center' },
+  centerBody: { ...dsType.body, color: ds.ink2, textAlign: 'center' },
+  centerButton: { marginTop: dsSpacing.md, height: 48, paddingHorizontal: dsSpacing.xl, borderRadius: dsRadii.button, backgroundColor: ds.primaryStrong, alignItems: 'center', justifyContent: 'center' },
+  centerButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
   body: { flex: 1 },
   bodyContent: { paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.lg, paddingBottom: dsSpacing.xl, gap: dsSpacing.xl },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: dsSpacing.md },
   sectionTitle: { ...dsType.h3 },
   sectionTitleSpaced: { marginBottom: dsSpacing.md },
   changeLink: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.primaryInk },
-  card: { backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, padding: dsSpacing.md, ...dsElevation.e1 },
+  card: { backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, padding: dsSpacing.md, flexDirection: 'row', alignItems: 'flex-start', ...dsElevation.e1 },
   iconAvatar: { flexShrink: 0, width: 32, height: 32, borderRadius: dsRadii.pill, backgroundColor: ds.primarySoft, alignItems: 'center', justifyContent: 'center' },
   addressText: { flex: 1, minWidth: 0, marginLeft: dsSpacing.md },
   addressName: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
@@ -291,11 +411,9 @@ const styles = StyleSheet.create({
   shippingValue: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.ink },
   summaryCard: { padding: dsSpacing.md },
   lineRow: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.sm, paddingVertical: dsSpacing.sm },
-  lineThumb: { flexShrink: 0, width: 36, height: 36, borderRadius: dsRadii.input },
+  lineThumb: { flexShrink: 0, width: 36, height: 36, borderRadius: dsRadii.input, backgroundColor: ds.primarySoft },
   lineName: { flex: 1, minWidth: 0, fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
-  lineAmounts: { flexShrink: 0, alignItems: 'flex-end' },
-  lineTotal: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.ink },
-  lineMrp: { fontFamily: dsFontFamily[400], fontSize: 11, lineHeight: 14, color: ds.ink3, textDecorationLine: 'line-through' },
+  lineTotal: { flexShrink: 0, fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.ink },
   divider: { height: 1, backgroundColor: ds.line, marginVertical: dsSpacing.sm },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   summaryLabel: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink2 },
@@ -337,10 +455,9 @@ const styles = StyleSheet.create({
     gap: dsSpacing.sm,
     paddingHorizontal: dsSpacing.lg,
   },
+  payButtonDisabled: { opacity: 0.5 },
   payButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
   scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(12,71,51,.45)' },
-  // Source has no grabber on this specific sheet instance (unlike the generic §8.8 spec) — matched
-  // verbatim, not added.
   paymentSheet: {
     position: 'absolute',
     left: 0,
@@ -356,13 +473,8 @@ const styles = StyleSheet.create({
     ...dsElevation.e3,
   },
   statusIcon: { width: 56, height: 56, borderRadius: dsRadii.pill, alignItems: 'center', justifyContent: 'center' },
-  statusIconOutlined: { backgroundColor: ds.canvas, borderWidth: 1.5, borderColor: ds.line },
-  // Source literally uses 16px here (not the design system's stated 4/8/12/20/32 scale) — replicated
-  // as authored rather than snapped to the nearest allowed value.
   statusTitle: { fontFamily: dsFontFamily[700], fontSize: 16, lineHeight: 22, letterSpacing: -0.16, color: ds.ink, marginTop: 16, textAlign: 'center' },
   statusSubtitle: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink2, marginTop: 4, textAlign: 'center' },
-  // Source uses radius 10 for these two buttons specifically, not the standard 12 (dsRadii.button) —
-  // replicated as authored.
   statusButton: { marginTop: dsSpacing.lg, width: '100%', height: 48, borderRadius: 10, backgroundColor: ds.primaryStrong, alignItems: 'center', justifyContent: 'center' },
   statusButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
   statusCancel: { marginTop: dsSpacing.md, fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.ink2 },

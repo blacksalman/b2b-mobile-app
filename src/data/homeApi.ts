@@ -21,15 +21,18 @@ export { hashProductId };
 
 // Home screen sections backed by the backend's real admin-curated content
 // (product-sections / category-sections / banners / collections), as opposed
-// to home-content.ts which stays fully mock for Buy again / Fast-moving
-// offers (explicitly deferred - pending a decision with the doctor) and the
-// purely-editorial rails (Doctor's Talk, What buyers say, promo banners)
-// that have no backend model at all yet.
+// to home-content.ts which stays fully mock for Buy again (still deferred -
+// pending a decision with the doctor) and the purely-editorial rails
+// (Doctor's Talk, What buyers say, promo banners) that have no backend
+// model at all yet. Fast-moving offers used to be deferred alongside Buy
+// again too, but now has a real product-section (slug "fast-moving-offer")
+// and renders as its own real rail (see fastMoving below) - same shape as
+// bestSellers/newArrivals/featured, no more special-casing its own useCase-
+// labeled row layout (that was mock-only content with no real equivalent).
 //
-// `buy-again` and `fast-moving-offer` product-sections DO already exist in
-// the DB (an admin created them) but are deliberately excluded here - they
-// stay on mock data until that separate decision is made.
-const EXCLUDED_SLUGS = new Set(['buy-again', 'fast-moving-offer']);
+// `buy-again` still stays excluded here - it stays on mock data until that
+// separate decision is made.
+const EXCLUDED_SLUGS = new Set(['buy-again']);
 
 export interface ApiConcernShelf {
   slug: string;
@@ -63,6 +66,7 @@ export interface HomeApiData {
   bestSellers: MedusaProduct[];
   newArrivals: MedusaProduct[];
   featured: MedusaProduct[];
+  fastMoving: MedusaProduct[];
   concernShelves: ApiConcernShelf[];
   categoryTiles: ApiCategoryTile[];
   brands: ApiBrand[];
@@ -75,6 +79,7 @@ const EMPTY_DATA: HomeApiData = {
   bestSellers: [],
   newArrivals: [],
   featured: [],
+  fastMoving: [],
   concernShelves: [],
   categoryTiles: [],
   brands: [],
@@ -114,8 +119,9 @@ export function useHomeApiData(): HomeApiData {
         const bestSellersSection = sections.find((s) => s.slug === 'best-sellers');
         const newArrivalsSection = sections.find((s) => s.slug === 'new-arrivals');
         const featuredSection = sections.find((s) => s.slug === 'featured-product' || s.slug === 'featured');
+        const fastMovingSection = sections.find((s) => s.slug === 'fast-moving-offer');
         const concernSections = sections.filter(
-          (s) => s !== bestSellersSection && s !== newArrivalsSection && s !== featuredSection
+          (s) => s !== bestSellersSection && s !== newArrivalsSection && s !== featuredSection && s !== fastMovingSection
         );
 
         const allIds = [
@@ -162,6 +168,7 @@ export function useHomeApiData(): HomeApiData {
           bestSellers: bestSellersSection ? resolve(bestSellersSection.products) : [],
           newArrivals: newArrivalsSection ? resolve(newArrivalsSection.products) : [],
           featured: featuredSection ? resolve(featuredSection.products) : [],
+          fastMoving: fastMovingSection ? resolve(fastMovingSection.products) : [],
           concernShelves: concernSections.map((s, i) => ({
             slug: s.slug,
             title: s.title,

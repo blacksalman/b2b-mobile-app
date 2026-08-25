@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { ArrowRightIcon, CheckThinIcon, SmallBackChevronIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
+import { completeRegistration } from '@/lib/medusaAuth';
+import { toE164 } from '@/lib/phoneFormat';
 
 // Built against the new AyurvedaOne design system (screen_AuthRegister.html, `isAuthRegister` block —
 // fully in range). Final step of the Auth flow: on completion this is the ONE place in the app that
@@ -18,28 +20,55 @@ import { useAppState } from '@/state/AppStateContext';
 // the Edit Profile round used for its own two-option business-type picker, which this screen's radio
 // styling is deliberately modeled on (primary border + primaryStrong fill + white check when selected).
 //
-// `onRegName`/`onRegBusiness`/`onRegEmail`/`completeRegistration` are also past the cap; the two
-// setters are the same plain `e=>this.setState({field:e.target.value})` shape as `onAuthPhone` (which
-// IS in range), so mirroring that pattern here is mechanical, not invented. `completeRegistration`'s
-// destination (back to Account, now logged in) is the only sensible conclusion given every other
-// completion handler built this session returns to a sensible endpoint the same way.
+// `onRegName`/`onRegBusiness`/`onRegEmail` setters are the same plain
+// `e=>this.setState({field:e.target.value})` shape as `onAuthPhone` (which IS in range), so
+// mirroring that pattern here is mechanical, not invented. `completeRegistration`'s destination
+// (back to Account, now logged in) is the only sensible conclusion given every other completion
+// handler built this session returns to a sensible endpoint the same way.
+//
+// Real backend behind this screen now: only reached from Otp when verifyOtp reports a brand-new
+// phone (see otp.tsx), so `phone` always arrives as a route param here rather than being
+// re-entered. `regType`'s two options (Doctor/Retailer-Distributor) have no dedicated backend
+// field - stored on the real customer's metadata.business_type, same as this app's other
+// no-native-field choices (e.g. category glyphs/tints). `regBusiness` maps to Medusa's real
+// company_name field on the customer model.
 export default function AuthRegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { flash, setLoggedIn } = useAppState();
+  const { flash, login } = useAppState();
+  const { phone } = useLocalSearchParams<{ phone?: string }>();
 
   const [regName, setRegName] = useState('');
   const [regBusiness, setRegBusiness] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regType, setRegType] = useState<(typeof REG_TYPES)[number]>(REG_TYPES[0]);
+  const [submitting, setSubmitting] = useState(false);
 
   const goAuthPhone = () => router.push('/auth/phone');
   const openPolicyTerms = () => flash('Terms of Service');
   const openPolicyPrivacy = () => flash('Privacy Policy');
-  const completeRegistration = () => {
-    setLoggedIn(true);
-    flash('Welcome to AyurvedaOne');
-    router.push('/account');
+  const submitRegistration = async () => {
+    if (!phone || !regName.trim() || !regEmail.trim() || submitting) return;
+    setSubmitting(true);
+    const [firstName, ...rest] = regName.trim().split(/\s+/);
+    const lastName = rest.join(' ');
+    try {
+      const customer = await completeRegistration({
+        email: regEmail.trim(),
+        firstName,
+        lastName: lastName || undefined,
+        phone: toE164(phone),
+        companyName: regBusiness.trim() || undefined,
+        businessType: regType,
+      });
+      login(customer);
+      flash('Welcome to AyurvedaOne');
+      router.push('/account');
+    } catch {
+      flash('Could not complete registration. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -76,9 +105,15 @@ export default function AuthRegisterScreen() {
             })}
           </View>
 
-          <Pressable onPress={completeRegistration} style={styles.ctaButton}>
-            <Text style={styles.ctaButtonText}>Complete registration</Text>
-            <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
+          <Pressable onPress={submitRegistration} disabled={submitting} style={[styles.ctaButton, submitting && styles.ctaButtonDisabled]}>
+            {submitting ? (
+              <ActivityIndicator color={ds.surface} />
+            ) : (
+              <>
+                <Text style={styles.ctaButtonText}>Complete registration</Text>
+                <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
+              </>
+            )}
           </Pressable>
           <Text style={styles.legalText}>
             By registering, you agree to our <Text onPress={openPolicyTerms} style={styles.legalLink}>Terms of Service</Text> and{' '}
@@ -193,6 +228,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: dsSpacing.sm,
   },
+  ctaButtonDisabled: { opacity: 0.7 },
   ctaButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
   legalText: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, marginTop: dsSpacing.md, textAlign: 'center' },
   legalLink: { color: ds.primaryInk },

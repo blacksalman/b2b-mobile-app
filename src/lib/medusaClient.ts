@@ -3,9 +3,18 @@
 // here - add more as more screens get connected (see AGENTS.md / CLAUDE.md conversation:
 // wiring happens page by page, section by section, not all at once).
 
+import { getAuthHeader } from './authToken';
+
 const BASE_URL = process.env.EXPO_PUBLIC_MEDUSA_BACKEND_URL ?? 'http://localhost:9000';
 const PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? '';
 export const DEFAULT_REGION_ID = process.env.EXPO_PUBLIC_MEDUSA_REGION_ID ?? '';
+
+// ngrok's free tier serves an HTML "you're about to visit..." interstitial instead of the real
+// response for any request it doesn't recognize as already-trusted, which would otherwise
+// silently break every fetch below (JSON.parse on an HTML page) whenever BASE_URL points at an
+// ngrok tunnel (see the "test from outside the Wi-Fi" conversation). Harmless no-op against a
+// plain LAN/localhost backend, so this is always sent rather than only when tunneling.
+const COMMON_HEADERS = { 'ngrok-skip-browser-warning': 'true' };
 
 // GET-with-query-params helper - every read endpoint in this file uses this (also used
 // directly by medusaCart.ts's fetchCart, which needs no query params).
@@ -23,7 +32,7 @@ export async function storeFetch<T>(path: string, params?: Record<string, string
   }
   const query = qs.toString();
   const res = await fetch(`${BASE_URL}${path}${query ? `?${query}` : ''}`, {
-    headers: { 'x-publishable-api-key': PUBLISHABLE_KEY },
+    headers: { ...COMMON_HEADERS, 'x-publishable-api-key': PUBLISHABLE_KEY, ...getAuthHeader() },
   });
   if (!res.ok) {
     throw new Error(`Medusa store API ${path} failed: ${res.status}`);
@@ -31,11 +40,15 @@ export async function storeFetch<T>(path: string, params?: Record<string, string
   return res.json();
 }
 
-// POST/DELETE-with-JSON-body helper - used by medusaCart.ts's cart/line-item mutations.
+// POST/DELETE-with-JSON-body helper - used by medusaCart.ts's cart/line-item mutations, and by
+// medusaAuth.ts for the phone-OTP send/register/session + customer-creation calls (the customer
+// token, once set via authToken.ts's setToken, rides along automatically here too - e.g. POST
+// /store/customers needs the interim registration token as Bearer, which this picks up with no
+// extra plumbing at the call site).
 export async function storeMutate<T>(path: string, method: 'POST' | 'DELETE', body?: Record<string, unknown>): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
-    headers: { 'x-publishable-api-key': PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
+    headers: { ...COMMON_HEADERS, 'x-publishable-api-key': PUBLISHABLE_KEY, 'Content-Type': 'application/json', ...getAuthHeader() },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -269,4 +282,40 @@ export interface DeliveryEstimate {
 
 export function fetchDeliveryEstimate(pincode: string): Promise<DeliveryEstimate> {
   return storeFetch('/store/delivery-tat', { pincode });
+}
+
+// Native GET /store/orders (docs/STORE_API.md section 7) - auto-scoped to the logged-in
+// customer via the Authorization bearer token (see authToken.ts/medusaClient's getAuthHeader),
+// no customer_id param needed. `fields` explicitly requests product id/thumbnail/title per line
+// item - the custom reorder route only asked for variant_id/quantity, these aren't pulled by
+// default. Used by the real "Buy again" Home section (ordersApi.ts) and, later, a real order
+// history screen.
+export interface MedusaOrderLineItem {
+  id: string;
+  product_id: string | null;
+  product_title: string;
+  thumbnail: string | null;
+  quantity: number;
+}
+
+export interface MedusaOrder {
+  id: string;
+  display_id: number;
+  status: string;
+  created_at: string;
+  total: number;
+  currency_code: string;
+  items: MedusaOrderLineItem[];
+}
+
+const ORDER_FIELDS = ['id', 'display_id', 'status', 'created_at', 'total', 'currency_code', 'items.id', 'items.product_id', 'items.product_title', 'items.thumbnail', 'items.quantity'].join(',');
+
+export async function fetchOrders(opts: { limit?: number; offset?: number } = {}): Promise<{ orders: MedusaOrder[]; count: number }> {
+  const { limit = 20, offset = 0 } = opts;
+  return storeFetch('/store/orders', { limit: String(limit), offset: String(offset), fields: ORDER_FIELDS });
+}
+
+export async function fetchOrder(orderId: string): Promise<MedusaOrder> {
+  const data = await storeFetch<{ order: MedusaOrder }>(`/store/orders/${orderId}`, { fields: ORDER_FIELDS });
+  return data.order;
 }
