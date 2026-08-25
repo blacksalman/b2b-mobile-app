@@ -5,7 +5,7 @@ import { ds, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CheckThinIcon, CloseIcon } from '@/icons';
 import {
   availOptions,
-  brandOptions,
+  brandOptions as mockBrandOptions,
   concernOptions,
   countNonSortFilters,
   formOptions,
@@ -43,6 +43,10 @@ interface FilterSheetProps {
   // so Categories/Listing (not touched this round) still compile unchanged; falls back to a static
   // "Apply filters" label until a call site passes this.
   resultCount?: number;
+  // Real collection names (Categories screen) override the mock catalog's fake brand list
+  // (categories-content.ts's brandOptions, computed from mock products) - optional so Listing
+  // (still fully mock, not touched this round) keeps using the mock list unchanged.
+  brandOptions?: string[];
 }
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, the
@@ -60,8 +64,10 @@ export function FilterSheet({
   onToggleMulti,
   onClear,
   resultCount,
+  brandOptions,
 }: FilterSheetProps) {
   const insets = useSafeAreaInsets();
+  const effectiveBrandOptions = brandOptions ?? mockBrandOptions;
 
   const filterCount = countNonSortFilters(selections);
   const summaryText = filterCount === 0 ? 'Narrow down the catalogue' : filterCount === 1 ? '1 filter applied' : `${filterCount} filters applied`;
@@ -106,7 +112,7 @@ export function FilterSheet({
           />
           <FilterSection
             title="Brand"
-            options={brandOptions}
+            options={effectiveBrandOptions}
             isSelected={(o) => selections.brand.includes(o)}
             onPick={(o) => onToggleMulti('brand', o)}
           />

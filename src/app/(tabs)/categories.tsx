@@ -1,43 +1,51 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CloseIcon, FilterIcon, PackageIcon, SearchIcon, SmallBackChevronIcon } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
 import { FilterSheet } from '@/components/shell/FilterSheet';
 import { VariantSheet, type VariantPack } from '@/components/shell/VariantSheet';
-import { buildCategoryRail, countNonSortFilters, getCatBanner, getCatProducts } from '@/data/categories-content';
+import { countNonSortFilters } from '@/data/categories-content';
 import { useAppState } from '@/state/AppStateContext';
 import { productById } from '@/data/products';
-
-function addFlashLabel(name: string): string {
-  return name.split(' ').slice(0, 2).join(' ') + ' added';
-}
+import { useProductCategories, useCategoryProducts, useCollections } from '@/data/categoriesApi';
+import { toRailProduct } from '@/data/homeApi';
+import { useApiCartActions } from '@/data/useApiCartActions';
+import { productHref } from '@/data/idHash';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isCategories
-// block). Unlike the old design, the filter sheet's picks are no longer inert here — the new source
-// really filters the grid by category + every filter-sheet pick (see categories-content.ts's
-// `matchesCatFilters` port for the exact logic, including the "a live search query overrides every
-// other filter" quirk carried over verbatim). `FilterSheet` itself is still the old-styled sheet —
-// its restyle is deferred to a later round; only the data flowing through it changed.
+// block). Real-data version: the product grid, category rail, and search are all backed by the
+// backend now (GET /store/product-categories for the rail, GET /store/products-search +
+// fetchProductsByIds for the grid - see categoriesApi.ts). Of the filter sheet's 7 sections,
+// Sort/Price/Availability/Brand are wired to the real fetch (Brand via the 2 real collections,
+// not the old mock brand list); Concern/Product form/Key ingredient stay mock/inert - checked
+// the backend and none of those three map to any real attribute (product_type here is GST tax
+// rate, not form; product_tag is empty - zero ingredient/concern tagging exists at all).
+// `FilterSheet` itself is still the old-styled sheet — its restyle is deferred to a later round.
 export default function CategoriesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Home's category tiles (openCategory) pass a real category id here so this screen lands
+  // pre-selected instead of always opening to "All products". Categories is a persistent tab
+  // screen, not remounted per navigation, so an initial useState alone would only apply on the
+  // very first visit - the effect below re-syncs on every subsequent navigation too (including
+  // back to no categoryId at all, e.g. a plain "Explore full catalogue" tap elsewhere, which
+  // correctly resets to "All products" rather than leaving a stale selection behind).
+  const params = useLocalSearchParams<{ categoryId?: string }>();
   const {
     cart,
     loggedIn,
     addToCart,
-    inc,
-    dec,
     flash,
-    filters,
     filterOpen,
     filterTab,
     setFilterOpen,
     setFilterTab,
     setFilterSort,
     setFilterPrice,
+    filters,
     toggleFilterMulti,
     clearFilters,
     hasActiveFilters,
@@ -45,27 +53,49 @@ export default function CategoriesScreen() {
   } = useAppState();
 
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('');
+  const [categoryId, setCategoryId] = useState<string | null>(params.categoryId ?? null);
 
-  // Variant-pack sheet (source line 1142/2916) — only reachable from the single product with
-  // `selectOption` true (catalog index 1, Ashwagandha Capsules). `variantCart` is the source's own
-  // separate per-variant counter (`s.variantCart`), independent of the main cart quantity.
+  useEffect(() => {
+    setCategoryId(params.categoryId ?? null);
+  }, [params.categoryId]);
+
+  // Variant-pack sheet (source line 1142/2916) — only reachable from the single mock product with
+  // `selectOption` true. Real (API-backed) products never set `selectOption` (see toRailProduct in
+  // homeApi.ts), so this stays wired but unreachable now that this screen shows real products —
+  // kept as-is since VariantSheet/product/[id].tsx still use the same mock-catalog concept.
   const [variantProductId, setVariantProductId] = useState<number | null>(null);
   const [variantCart, setVariantCart] = useState<Record<string, number>>({});
 
-  const catProducts = useMemo(
-    () => getCatProducts(cart, loggedIn, query, category, filters),
-    [cart, loggedIn, query, category, filters],
+  const realCategories = useProductCategories();
+  const categoryName = categoryId ? (realCategories.find((c) => c.id === categoryId)?.name ?? '') : '';
+
+  const realCollections = useCollections();
+  const brandOptions = useMemo(() => realCollections.map((c) => c.title), [realCollections]);
+  // filters.brand holds NAMES (what the sheet displays/toggles) - resolved to real collection
+  // ids here since that's the only thing GET /store/products-search's collection_id accepts.
+  // Memoized so this array's identity only changes when the actual selection does - it's a
+  // useCategoryProducts dependency, and a fresh array every render would refetch on every
+  // unrelated re-render.
+  const brandCollectionIds = useMemo(
+    () =>
+      filters.brand
+        .map((name) => realCollections.find((c) => c.title === name)?.id)
+        .filter((id): id is string => !!id),
+    [filters.brand, realCollections]
   );
-  const categoryRail = useMemo(() => buildCategoryRail(category, setCategory), [category]);
+  const categoryFilters = useMemo(
+    () => ({ sort: filters.sort, price: filters.price, avail: filters.avail, brandCollectionIds }),
+    [filters.sort, filters.price, filters.avail, brandCollectionIds]
+  );
+  const productsState = useCategoryProducts(categoryId, query, categoryFilters);
+  const catProducts = useMemo(
+    () => productsState.results.map((p) => toRailProduct(p, cart, loggedIn)),
+    [productsState.results, cart, loggedIn]
+  );
   const variantProduct = variantProductId != null ? productById(variantProductId) ?? null : null;
 
-  const openProduct = (id: number) => router.push(`/product/${id}`);
-  const addProduct = (id: number) => {
-    const p = productById(id);
-    addToCart(id, 1);
-    if (p) flash(addFlashLabel(p.name));
-  };
+  const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
+  const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
   const goCart = () => router.push('/cart');
   const goLogin = () => router.push('/account');
   const goHome = () => router.push('/');
@@ -94,31 +124,32 @@ export default function CategoriesScreen() {
   };
 
   const hasQuery = query.trim().length > 0;
-  const showCatBanner = !hasQuery && !!category;
-  const catBanner = getCatBanner(category);
-  const catHeading = hasQuery ? `“${query}”` : category || 'All products';
+  const catHeading = hasQuery ? `“${query}”` : categoryName || 'All products';
   // Ported verbatim (source line 2960/2966/2972/2983): this count deliberately excludes `sort`,
-  // unlike `hasActiveFilters` (used for the pills row above), which does include it.
+  // unlike `hasActiveFilters` (used for the pills row above), which does include it. Still shown
+  // on the filter badge even though filters don't affect the real grid right now (see the
+  // file-level note) - it's just reflecting what's selected, same as the pills row.
   const nonSortFilterCount = countNonSortFilters(filters);
-  const catEmpty = catProducts.length === 0;
+  const catEmpty = !productsState.loading && !productsState.error && catProducts.length === 0;
 
-  const catEmptyTitle = hasQuery
-    ? `No results for “${query}”`
-    : nonSortFilterCount
-      ? 'No products match these filters'
-      : category
-        ? `No lines in ${category} yet`
+  const catEmptyTitle = productsState.error
+    ? 'Could not load products'
+    : hasQuery
+      ? `No results for “${query}”`
+      : categoryName
+        ? `No products in ${categoryName} yet`
         : 'No products to show';
-  const catEmptyBody = hasQuery
-    ? 'Check the spelling, or clear the search to browse the full catalogue.'
-    : nonSortFilterCount
-      ? 'Try removing a filter or two to widen the results.'
-      : 'We are onboarding suppliers for this category. Browse the full catalogue meanwhile.';
-  const catEmptyCta = hasQuery ? 'Clear search' : nonSortFilterCount ? 'Clear all filters' : 'Browse all products';
+  const catEmptyBody = productsState.error
+    ? 'Something went wrong reaching the catalogue. Try again in a moment.'
+    : hasQuery
+      ? 'Check the spelling, or clear the search to browse the full catalogue.'
+      : categoryName
+        ? 'Try another category or browse the full catalogue.'
+        : 'Please check back soon.';
+  const catEmptyCta = hasQuery ? 'Clear search' : categoryName ? 'Browse all products' : '';
   const catEmptyReset = () => {
     setQuery('');
-    setCategory('');
-    clearFilters();
+    setCategoryId(null);
   };
 
   return (
@@ -161,9 +192,23 @@ export default function CategoriesScreen() {
 
         {!hasQuery && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rail} contentContainerStyle={styles.railContent}>
-            {categoryRail.map((c) => (
-              <Pressable key={c.name} onPress={c.select} style={[styles.railChip, { backgroundColor: c.chipBg, borderColor: c.chipBorder }]}>
-                <Text style={[styles.railChipText, { color: c.color }]}>{c.name}</Text>
+            <Pressable
+              onPress={() => setCategoryId(null)}
+              style={[styles.railChip, categoryId === null ? styles.railChipActive : styles.railChipInactive]}
+            >
+              <Text style={[styles.railChipText, categoryId === null ? styles.railChipTextActive : styles.railChipTextInactive]}>
+                All
+              </Text>
+            </Pressable>
+            {realCategories.map((c) => (
+              <Pressable
+                key={c.id}
+                onPress={() => setCategoryId(c.id)}
+                style={[styles.railChip, categoryId === c.id ? styles.railChipActive : styles.railChipInactive]}
+              >
+                <Text style={[styles.railChipText, categoryId === c.id ? styles.railChipTextActive : styles.railChipTextInactive]}>
+                  {c.name}
+                </Text>
               </Pressable>
             ))}
           </ScrollView>
@@ -187,12 +232,7 @@ export default function CategoriesScreen() {
           </ScrollView>
         )}
 
-        {showCatBanner && (
-          <View style={[styles.banner, { backgroundColor: catBanner.tint }]}>
-            <Text style={styles.bannerTitle}>{catBanner.title}</Text>
-            <Text style={styles.bannerSub}>{catBanner.sub}</Text>
-          </View>
-        )}
+        {productsState.loading && <Text style={styles.loadingText}>Loading products…</Text>}
 
         {catEmpty ? (
           <View style={styles.emptyState}>
@@ -201,9 +241,11 @@ export default function CategoriesScreen() {
             </View>
             <Text style={styles.emptyTitle}>{catEmptyTitle}</Text>
             <Text style={styles.emptyBody}>{catEmptyBody}</Text>
-            <Pressable onPress={catEmptyReset} style={styles.emptyCta}>
-              <Text style={styles.emptyCtaText}>{catEmptyCta}</Text>
-            </Pressable>
+            {!!catEmptyCta && (
+              <Pressable onPress={catEmptyReset} style={styles.emptyCta}>
+                <Text style={styles.emptyCtaText}>{catEmptyCta}</Text>
+              </Pressable>
+            )}
           </View>
         ) : (
           <View style={styles.grid}>
@@ -212,10 +254,10 @@ export default function CategoriesScreen() {
                 key={p.id}
                 product={p}
                 width="48%"
-                onOpen={() => openProduct(p.id)}
-                onAdd={() => addProduct(p.id)}
-                onInc={() => inc(p.id)}
-                onDec={() => dec(p.id)}
+                onOpen={() => openProduct(p)}
+                onAdd={() => addApiProduct(p)}
+                onInc={() => incApiProduct(p)}
+                onDec={() => decApiProduct(p)}
                 onLogin={goLogin}
                 onSelectOption={() => openVariant(p.id)}
               />
@@ -234,6 +276,8 @@ export default function CategoriesScreen() {
         onTogglePrice={setFilterPrice}
         onToggleMulti={toggleFilterMulti}
         onClear={clearFilters}
+        brandOptions={brandOptions}
+        resultCount={productsState.count}
       />
 
       <VariantSheet
@@ -303,7 +347,12 @@ const styles = StyleSheet.create({
   rail: { flexGrow: 0 },
   railContent: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingVertical: dsSpacing.md },
   railChip: { flexShrink: 0, height: 36, paddingHorizontal: dsSpacing.md, borderRadius: dsRadii.pill, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  railChipActive: { backgroundColor: '#DCF5E9', borderColor: '#25A567' },
+  railChipInactive: { backgroundColor: '#F6F8F7', borderColor: 'transparent' },
   railChipText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22 },
+  railChipTextActive: { color: '#0C4733' },
+  railChipTextInactive: { color: '#586360' },
+  loadingText: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
   body: { flex: 1 },
   bodyContent: { paddingBottom: dsSpacing.xl },
   pillsRow: { flexGrow: 0 },
@@ -323,9 +372,6 @@ const styles = StyleSheet.create({
   pillText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22, color: ds.primaryInk },
   pillRemove: { width: 20, height: 20, borderRadius: dsRadii.pill, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },
   clearAll: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.accent, paddingHorizontal: 4 },
-  banner: { marginTop: dsSpacing.md, marginHorizontal: dsSpacing.lg, borderRadius: dsRadii.button, padding: dsSpacing.md },
-  bannerTitle: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
-  bannerSub: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
   emptyState: { paddingVertical: dsSpacing.xl, paddingHorizontal: dsSpacing.lg, alignItems: 'center' },
   emptyIcon: { width: 64, height: 64, borderRadius: dsRadii.pill, backgroundColor: ds.primarySoft, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontFamily: dsFontFamily[600], fontSize: 16, lineHeight: 22, letterSpacing: -0.16, color: ds.ink, marginTop: dsSpacing.md, textAlign: 'center' },

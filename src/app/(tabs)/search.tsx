@@ -5,13 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing } from '@/theme';
 import { BackChevronIcon, CloseIcon, SearchIcon, MicIcon } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
-import { getSearchResults, recentSearches } from '@/data/search-content';
 import { useAppState } from '@/state/AppStateContext';
-import { productById } from '@/data/products';
-
-function addFlashLabel(name: string): string {
-  return name.split(' ').slice(0, 2).join(' ') + ' added';
-}
+import { useProductSearch } from '@/data/searchApi';
+import { useRecentSearches } from '@/data/recentSearches';
+import { toRailProduct } from '@/data/homeApi';
+import { useApiCartActions } from '@/data/useApiCartActions';
+import { productHref } from '@/data/idHash';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isSearch
 // block, line 750-833). Same fidelity note as the previous Search build: the source defines a
@@ -23,20 +22,32 @@ function addFlashLabel(name: string): string {
 export default function SearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { cart, loggedIn, addToCart, inc, dec, flash } = useAppState();
+  const { cart, loggedIn } = useAppState();
 
   const [query, setQuery] = useState('');
   const [listening] = useState(false);
 
-  const results = useMemo(() => getSearchResults(cart, loggedIn, query), [cart, loggedIn, query]);
+  // Real full-catalog search (GET /store/products-search) - see useProductSearch for why this
+  // is a two-step fetch (search for the ranked id list, then hydrate price/collection/category
+  // data), debounced 350ms so every keystroke doesn't fire a request.
+  const search = useProductSearch(query);
+  const results = useMemo(
+    () => search.results.map((p) => toRailProduct(p, cart, loggedIn)),
+    [search.results, cart, loggedIn]
+  );
   const hasQuery = query.trim().length > 0;
 
-  const openProduct = (id: number) => router.push(`/product/${id}`);
-  const addProduct = (id: number) => {
-    const p = productById(id);
-    addToCart(id, 1);
-    if (p) flash(addFlashLabel(p.name));
+  const { recentSearches, addRecentSearch } = useRecentSearches();
+  // Recorded on submit (keyboard search/enter) rather than every debounced keystroke, so
+  // typing "ashwagandha" doesn't leave "ash", "ashwa", "ashwagandh" etc. behind in history.
+  const commitSearch = () => addRecentSearch(query);
+  const openRecentSearch = (q: string) => {
+    setQuery(q);
+    addRecentSearch(q);
   };
+
+  const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
+  const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
   const goLogin = () => router.push('/account');
 
   return (
@@ -51,6 +62,8 @@ export default function SearchScreen() {
             <TextInput
               value={query}
               onChangeText={setQuery}
+              onSubmitEditing={commitSearch}
+              returnKeyType="search"
               placeholder="Search SKUs, brands, cases"
               placeholderTextColor={ds.ink3}
               style={styles.input}
@@ -76,12 +89,12 @@ export default function SearchScreen() {
           </View>
         )}
 
-        {!hasQuery && (
+        {!hasQuery && recentSearches.length > 0 && (
           <>
             <Text style={styles.sectionLabel}>RECENT</Text>
             <View style={styles.recentChips}>
               {recentSearches.map((q) => (
-                <Pressable key={q} onPress={() => setQuery(q)} style={styles.recentChip}>
+                <Pressable key={q} onPress={() => openRecentSearch(q)} style={styles.recentChip}>
                   <Text style={styles.recentChipText}>{q}</Text>
                 </Pressable>
               ))}
@@ -91,17 +104,26 @@ export default function SearchScreen() {
 
         {hasQuery && (
           <>
-            <Text style={styles.sectionLabel}>RESULTS FOR &quot;{query}&quot;</Text>
+            <Text style={styles.sectionLabel}>
+              {search.loading
+                ? 'SEARCHING…'
+                : search.error
+                  ? 'SEARCH FAILED'
+                  : `RESULTS FOR "${query}" (${search.count})`}
+            </Text>
+            {!search.loading && !search.error && results.length === 0 && (
+              <Text style={styles.emptyText}>No products match &quot;{query}&quot;.</Text>
+            )}
             <View style={styles.grid}>
               {results.map((p) => (
                 <DsProductCard
                   key={p.id}
                   product={p}
                   width="48%"
-                  onOpen={() => openProduct(p.id)}
-                  onAdd={() => addProduct(p.id)}
-                  onInc={() => inc(p.id)}
-                  onDec={() => dec(p.id)}
+                  onOpen={() => openProduct(p)}
+                  onAdd={() => addApiProduct(p)}
+                  onInc={() => incApiProduct(p)}
+                  onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
                 />
               ))}
@@ -149,4 +171,5 @@ const styles = StyleSheet.create({
   recentChip: { backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.pill, paddingHorizontal: dsSpacing.md, paddingVertical: dsSpacing.sm },
   recentChipText: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink2 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: dsSpacing.md, marginTop: dsSpacing.md },
+  emptyText: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink3, marginTop: dsSpacing.md },
 });

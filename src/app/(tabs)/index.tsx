@@ -1,39 +1,27 @@
 import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsElevation } from '@/theme';
 import { Header } from '@/components/shell/Header';
 import { DsSectionHeader } from '@/components/ds/DsSectionHeader';
 import { DsProductCard } from '@/components/ds/DsProductCard';
-import { ArrowRightIcon, MarginTrendIcon, DeliveryBoxIcon, ShieldCheckIcon, ChevronRightIcon, ConcernLeafIcon, CartIcon, TrashIcon } from '@/icons';
+import { MarginTrendIcon, DeliveryBoxIcon, ShieldCheckIcon, ChevronRightIcon, ConcernLeafIcon, CartIcon, TrashIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import {
-  BEST_SELLERS_LISTING_IDS,
-  FEATURED_LISTING_IDS,
-  NEW_ARRIVALS_LISTING_IDS,
-  brands,
   buyerReviews,
   doctorTalks,
   fastMoving,
-  getBestSellers,
   getBuyAgain,
-  getConcerns,
-  getFeatured,
-  getNewArrivals,
-  heroSlides,
-  prescriptionGroups,
   promoBanners,
 } from '@/data/home-content';
-import { productById, productIdsByBrand, productIdsByCategory } from '@/data/products';
-import { categories } from '@/data/categories';
+import { productById, productIdsByCategory } from '@/data/products';
+import { useHomeApiData, toRailProduct, type ApiCategoryTile, type ApiBrand } from '@/data/homeApi';
+import { useApiCartActions } from '@/data/useApiCartActions';
+import { productHref } from '@/data/idHash';
 
 function addFlashLabel(name: string): string {
   return name.split(' ').slice(0, 2).join(' ') + ' added';
-}
-
-function categoryTagline(catName: string): string {
-  const cat = categories.find((c) => c.name === catName);
-  return `${cat ? cat.count : 0} SKUs · case pricing`;
 }
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isHome
@@ -46,25 +34,61 @@ export default function HomeScreen() {
   const { cart, loggedIn, addToCart, inc, dec, flash } = useAppState();
 
   const buyAgain = useMemo(() => getBuyAgain(cart, loggedIn), [cart, loggedIn]);
-  const bestSellers = useMemo(() => getBestSellers(cart, loggedIn), [cart, loggedIn]);
-  const newArrivals = useMemo(() => getNewArrivals(cart, loggedIn), [cart, loggedIn]);
-  const featured = useMemo(() => getFeatured(cart, loggedIn), [cart, loggedIn]);
-  const concerns = useMemo(() => getConcerns(cart, loggedIn), [cart, loggedIn]);
 
-  const openProduct = (id: number) => router.push(`/product/${id}`);
+  // Best sellers / New arrivals / Featured / Concern shelves / category tiles / brands / hero
+  // banners are all backed by the real backend now (product-sections, category-sections,
+  // collections, banners) - see useHomeApiData. Buy again and Fast-moving offers stay on
+  // home-content.ts's mock data, deferred pending a decision with the doctor.
+  const apiData = useHomeApiData();
+  const bestSellers = useMemo(
+    () => apiData.bestSellers.map((p) => toRailProduct(p, cart, loggedIn)),
+    [apiData.bestSellers, cart, loggedIn]
+  );
+  const newArrivals = useMemo(
+    () => apiData.newArrivals.map((p) => toRailProduct(p, cart, loggedIn)),
+    [apiData.newArrivals, cart, loggedIn]
+  );
+  const featured = useMemo(
+    () => apiData.featured.map((p) => toRailProduct(p, cart, loggedIn)),
+    [apiData.featured, cart, loggedIn]
+  );
+  const concerns = useMemo(
+    () =>
+      apiData.concernShelves.map((c) => ({
+        ...c,
+        products: c.rawProducts.map((p) => toRailProduct(p, cart, loggedIn)),
+      })),
+    [apiData.concernShelves, cart, loggedIn]
+  );
+
+  const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
   const addProduct = (id: number) => {
     const p = productById(id);
     addToCart(id, 1);
     if (p) flash(addFlashLabel(p.name));
   };
+  // API-sourced rails (Best sellers/New arrivals/Featured/Concern shelves): shared with Search
+  // - see useApiCartActions for why this differs from addProduct above.
+  const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
   const goLogin = () => router.push('/account');
   const goCategories = () => router.push('/categories');
+  // Categories is a persistent tab screen, not a fresh page each time - passing categoryId as a
+  // param (read by categories.tsx) is what lets it land pre-selected on that category instead of
+  // always opening to "All products" regardless of which tile was tapped.
+  const openCategory = (categoryId: string) => router.push({ pathname: '/categories', params: { categoryId } });
 
   const openListing = (ids: number[], title: string, tagline: string, tint: string) => {
     router.push({ pathname: '/listing', params: { ids: ids.join(','), title, tagline, tint } });
   };
   const openListingByCategory = (catName: string, title: string, tagline: string, tint: string) =>
     openListing(productIdsByCategory(catName), title, tagline, tint);
+  // Brand cards get their own real path through Listing (collectionId param) instead of the
+  // ids-based one above - a brand can have 40-160+ products, way past what's reasonable to pass
+  // as a comma-joined id list in a URL, and unlike the mock ids/getListingProducts path this one
+  // is real-data (see listing.tsx's collectionId branch).
+  const openBrandListing = (b: ApiBrand) => {
+    router.push({ pathname: '/listing', params: { collectionId: b.id, title: b.name, tagline: `${b.skus} products`, tint: b.tint } });
+  };
 
   const handlePromoBanner = (b: (typeof promoBanners)[number]) => {
     if ('targetListing' in b && b.targetListing) {
@@ -79,27 +103,19 @@ export default function HomeScreen() {
     <View style={styles.screen}>
       <Header />
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Hero carousel */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroRail}>
-          {heroSlides.map((h) => (
-            <Pressable
-              key={h.title}
-              onPress={() => openListingByCategory(h.cat, h.title, categoryTagline(h.cat), h.tint)}
-              style={[styles.heroCard, { backgroundColor: h.tint }]}
-            >
-              <View style={styles.heroCircle} />
-              <View>
-                <Text style={styles.heroEyebrow}>{h.eyebrow}</Text>
-                <Text style={styles.heroTitle}>{h.title}</Text>
-                <Text style={styles.heroBlurb}>{h.blurb}</Text>
-                <View style={styles.heroButton}>
-                  <Text style={styles.heroButtonText}>{h.cta}</Text>
-                  <ArrowRightIcon size={16} color={ds.surface} strokeWidth={1.75} />
-                </View>
-              </View>
-            </Pressable>
-          ))}
-        </ScrollView>
+        {/* Hero carousel - backed by GET /store/banners?target_type=home. The Banner model is
+            image-only (no eyebrow/title/blurb/cta text, unlike the old mock slides), and the
+            section renders nothing at all when there are no banners yet, rather than showing an
+            empty rail. */}
+        {apiData.heroBanners.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroRail}>
+            {apiData.heroBanners.map((b) => (
+              <Pressable key={b.id} onPress={goCategories} style={styles.heroImageCard}>
+                <Image source={{ uri: b.image_url as string }} style={styles.heroImage} contentFit="cover" />
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
 
         {/* Up to 63% profit margin — decorative tier copy, not wired to real tier logic */}
         <Pressable onPress={goCategories} style={styles.marginBanner}>
@@ -120,13 +136,14 @@ export default function HomeScreen() {
           actionLabel="View all"
           onAction={goCategories}
         />
+        {/* Backed by GET /store/category-sections, flattened/deduped across sections. Real
+            categories have no glyph/tint of their own (only id/name/handle), so those stay a
+            rotating placeholder - same approach as margin/rating on the product cards. Tapping a
+            tile opens Categories pre-selected to that real category (openCategory), not just a
+            generic landing on "All products". */}
         <View style={styles.prescriptionGrid}>
-          {prescriptionGroups.map((g) => (
-            <Pressable
-              key={g.name}
-              onPress={() => openListingByCategory(g.cat, g.name, `${g.count} products`, g.tint)}
-              style={styles.prescriptionTile}
-            >
+          {apiData.categoryTiles.map((g: ApiCategoryTile) => (
+            <Pressable key={g.id} onPress={() => openCategory(g.id)} style={styles.prescriptionTile}>
               <View style={[styles.prescriptionGlyphTile, { backgroundColor: g.tint }]}>
                 <Text style={styles.prescriptionGlyph}>{g.glyph}</Text>
               </View>
@@ -143,11 +160,11 @@ export default function HomeScreen() {
             const inCart = qty > 0;
             return (
               <View key={m.pid} style={styles.fastMovingRow}>
-                <Pressable onPress={() => openProduct(m.pid)} style={styles.fastMovingPhoto}>
+                <Pressable onPress={() => openProduct({ id: m.pid })} style={styles.fastMovingPhoto}>
                   <Text style={styles.fastMovingPhotoLabel}>photo</Text>
                 </Pressable>
                 <View style={styles.fastMovingInfo}>
-                  <Pressable onPress={() => openProduct(m.pid)}>
+                  <Pressable onPress={() => openProduct({ id: m.pid })}>
                     <Text style={styles.fastMovingName} numberOfLines={1}>{m.name}</Text>
                   </Pressable>
                   <Text style={styles.fastMovingUseCase} numberOfLines={1}>{m.useCase}</Text>
@@ -219,7 +236,7 @@ export default function HomeScreen() {
               key={p.id}
               product={p}
               width={166}
-              onOpen={() => openProduct(p.id)}
+              onOpen={() => openProduct(p)}
               onAdd={() => addProduct(p.id)}
               onInc={() => inc(p.id)}
               onDec={() => dec(p.id)}
@@ -228,15 +245,14 @@ export default function HomeScreen() {
           ))}
         </ScrollView>
 
-        {/* Brands to know */}
+        {/* Brands to know - backed by the real "AYURVEDA ONE PVT LTD." / "AYUR VIBES" collections;
+            skus is each collection's real product count (GET /store/products-search?collection_id
+            with limit=1, reading `count`). initials/line/tint have no backend source, same
+            placeholder approach as everywhere else real data doesn't cover a design field yet. */}
         <DsSectionHeader title="Brands to know" subtitle="Direct trade partners, no middle margin" />
         <View style={styles.brandsRow}>
-          {brands.map((b) => (
-            <Pressable
-              key={b.name}
-              onPress={() => openListing(productIdsByBrand(b.name), b.short, `Premium ${b.short} products`, b.tint)}
-              style={styles.brandCard}
-            >
+          {apiData.brands.map((b: ApiBrand) => (
+            <Pressable key={b.id} onPress={() => openBrandListing(b)} style={styles.brandCard}>
               <View style={styles.brandImage}>
                 <Text style={styles.brandImageLabel}>store photo</Text>
                 <View style={styles.brandInitials}>
@@ -252,49 +268,58 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Best sellers */}
-        <DsSectionHeader
-          title="Best sellers"
-          subtitle="Top-moving cases across every outlet"
-          actionLabel="View all"
-          onAction={() => openListing(BEST_SELLERS_LISTING_IDS, 'Best sellers', 'Top-moving cases across every outlet', ds.primarySoft)}
-        />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-          {bestSellers.map((p) => (
-            <DsProductCard
-              key={p.id}
-              product={p}
-              width={166}
-              onOpen={() => openProduct(p.id)}
-              onAdd={() => addProduct(p.id)}
-              onInc={() => inc(p.id)}
-              onDec={() => dec(p.id)}
-              onLogin={goLogin}
+        {/* Best sellers - backed by product-sections slug "best-sellers" */}
+        {bestSellers.length > 0 && (
+          <>
+            <DsSectionHeader
+              title="Best sellers"
+              subtitle="Top-moving cases across every outlet"
+              actionLabel="View all"
+              onAction={() => openListing(bestSellers.map((p) => p.id), 'Best sellers', 'Top-moving cases across every outlet', ds.primarySoft)}
             />
-          ))}
-        </ScrollView>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+              {bestSellers.map((p) => (
+                <DsProductCard
+                  key={p.id}
+                  product={p}
+                  width={166}
+                  onOpen={() => openProduct(p)}
+                  onAdd={() => addApiProduct(p)}
+                  onInc={() => incApiProduct(p)}
+                  onDec={() => decApiProduct(p)}
+                  onLogin={goLogin}
+                />
+              ))}
+            </ScrollView>
+          </>
+        )}
 
-        {/* New arrivals */}
-        <DsSectionHeader
-          title="New arrivals"
-          subtitle="Added to the trade catalogue this week"
-          actionLabel="View all"
-          onAction={() => openListing(NEW_ARRIVALS_LISTING_IDS, 'New arrivals', 'Added to the trade catalogue this week', ds.primarySoft)}
-        />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-          {newArrivals.map((p) => (
-            <DsProductCard
-              key={p.id}
-              product={p}
-              width={166}
-              onOpen={() => openProduct(p.id)}
-              onAdd={() => addProduct(p.id)}
-              onInc={() => inc(p.id)}
-              onDec={() => dec(p.id)}
-              onLogin={goLogin}
+        {/* New arrivals - backed by product-sections slug "new-arrivals"; no such section exists
+            in the backend yet, so this renders nothing until an admin creates one. */}
+        {newArrivals.length > 0 && (
+          <>
+            <DsSectionHeader
+              title="New arrivals"
+              subtitle="Added to the trade catalogue this week"
+              actionLabel="View all"
+              onAction={() => openListing(newArrivals.map((p) => p.id), 'New arrivals', 'Added to the trade catalogue this week', ds.primarySoft)}
             />
-          ))}
-        </ScrollView>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+              {newArrivals.map((p) => (
+                <DsProductCard
+                  key={p.id}
+                  product={p}
+                  width={166}
+                  onOpen={() => openProduct(p)}
+                  onAdd={() => addApiProduct(p)}
+                  onInc={() => incApiProduct(p)}
+                  onDec={() => decApiProduct(p)}
+                  onLogin={goLogin}
+                />
+              ))}
+            </ScrollView>
+          </>
+        )}
 
         {/* Promo banner carousel */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.promoRail}>
@@ -307,31 +332,36 @@ export default function HomeScreen() {
           ))}
         </ScrollView>
 
-        {/* Featured products */}
-        <DsSectionHeader
-          title="Featured products"
-          subtitle="Hand-picked by your account manager."
-          actionLabel="View all"
-          onAction={() => openListing(FEATURED_LISTING_IDS, 'Featured products', 'Hand-picked by your account manager', ds.primarySoft)}
-        />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-          {featured.map((p) => (
-            <DsProductCard
-              key={p.id}
-              product={p}
-              width={166}
-              onOpen={() => openProduct(p.id)}
-              onAdd={() => addProduct(p.id)}
-              onInc={() => inc(p.id)}
-              onDec={() => dec(p.id)}
-              onLogin={goLogin}
+        {/* Featured products - backed by product-sections slug "featured-product" */}
+        {featured.length > 0 && (
+          <>
+            <DsSectionHeader
+              title="Featured products"
+              subtitle="Hand-picked by your account manager."
+              actionLabel="View all"
+              onAction={() => openListing(featured.map((p) => p.id), 'Featured products', 'Hand-picked by your account manager', ds.primarySoft)}
             />
-          ))}
-        </ScrollView>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+              {featured.map((p) => (
+                <DsProductCard
+                  key={p.id}
+                  product={p}
+                  width={166}
+                  onOpen={() => openProduct(p)}
+                  onAdd={() => addApiProduct(p)}
+                  onInc={() => incApiProduct(p)}
+                  onDec={() => decApiProduct(p)}
+                  onLogin={goLogin}
+                />
+              ))}
+            </ScrollView>
+          </>
+        )}
 
-        {/* Concern shelves */}
+        {/* Concern shelves - backed by every remaining product-section (anything that isn't
+            best-sellers/new-arrivals/featured-product/buy-again/fast-moving-offer) */}
         {concerns.map((c) => (
-          <View key={c.title}>
+          <View key={c.slug}>
             <Pressable
               onPress={() => openListing(c.ids, c.title, c.blurb, c.tint)}
               style={[styles.concernBanner, { backgroundColor: c.tint }]}
@@ -351,10 +381,10 @@ export default function HomeScreen() {
                   key={p.id}
                   product={p}
                   width={166}
-                  onOpen={() => openProduct(p.id)}
-                  onAdd={() => addProduct(p.id)}
-                  onInc={() => inc(p.id)}
-                  onDec={() => dec(p.id)}
+                  onOpen={() => openProduct(p)}
+                  onAdd={() => addApiProduct(p)}
+                  onInc={() => incApiProduct(p)}
+                  onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
                 />
               ))}
@@ -421,23 +451,8 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: dsSpacing.xl },
 
   heroRail: { flexDirection: 'row', gap: dsSpacing.md, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
-  heroCard: { width: 302, borderRadius: dsRadii.sheet, overflow: 'hidden', padding: 12, paddingHorizontal: dsSpacing.lg },
-  heroCircle: { position: 'absolute', right: -26, top: -26, width: 118, height: 118, borderRadius: 59, backgroundColor: 'rgba(255,255,255,.22)' },
-  heroEyebrow: { fontFamily: dsFontFamily[700], fontSize: 11, lineHeight: 14, letterSpacing: 1.32, color: ds.ink2 },
-  heroTitle: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.ink, marginTop: 8 },
-  heroBlurb: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4, maxWidth: 206 },
-  heroButton: {
-    marginTop: dsSpacing.lg,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: dsSpacing.sm,
-    height: 40,
-    paddingHorizontal: dsSpacing.lg,
-    backgroundColor: ds.primaryStrong,
-    borderRadius: dsRadii.button,
-  },
-  heroButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
+  heroImageCard: { width: 302, aspectRatio: 16 / 9, borderRadius: dsRadii.sheet, overflow: 'hidden', backgroundColor: ds.primarySoft },
+  heroImage: { width: '100%', height: '100%' },
 
   marginBanner: {
     marginHorizontal: dsSpacing.lg,

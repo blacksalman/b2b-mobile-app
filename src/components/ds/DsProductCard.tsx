@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { ds, dsFontFamily, dsRadii, dsElevation } from '@/theme';
 import type { RailProduct } from '@/data/home-content';
 import { CartIcon, TrashIcon } from '@/icons';
@@ -21,17 +22,32 @@ interface DsProductCardProps {
 // Rebuilt against the new AyurvedaOne design system's product card (repeated verbatim across every
 // rail/grid in Various Mobile App - Phone.dc.html — buyAgain/featured/bestSellers/newArrivals/
 // concerns/search-results all share this exact markup). Distinct from the old `ProductCard.tsx`
-// (untouched, still used by Categories/Listing/Product's similar-products rail — none of those are
-// rebuilt yet): the new card drops the old design's top-left "times ordered"/rank/"New" badge
-// overlays entirely (not present anywhere in the new markup) and always shows a margin chip instead.
-// `noOffer` (Featured rail only) hides the struck compare-at price — every other rail always shows it.
+// (still used by Listing, not yet wired to real data): the new card drops the old design's
+// top-left "times ordered"/rank/"New" badge overlays entirely (not present anywhere in the new
+// markup) and shows a discount chip instead - the real per-unit discount % (p.discount), not a
+// fabricated margin number. `noOffer` (Featured rail only) hides the struck compare-at price —
+// every other rail always shows it when a real discount is active.
 export const DsProductCard = React.memo(function DsProductCard({ product: p, width, onOpen, onAdd, onInc, onDec, onLogin, onSelectOption }: DsProductCardProps) {
-  const showCompare = !p.noOffer;
+  // A real discount/MRP is only genuine when the product actually has one (p.cmp set) - decorateProduct
+  // falls back to a fabricated compareLabel (price*1.18) when it isn't, purely so mock-catalog screens
+  // that expect every card to show *some* struck price keep working; real API products correctly leave
+  // cmp unset when there's no real discount (see toRailProduct in homeApi.ts), so gate display on that
+  // instead of trusting compareLabel/margin to always be meaningful.
+  const hasDiscount = !p.noOffer && !!p.cmp;
 
   return (
     <View style={[styles.card, width ? { width } : styles.flexCard]}>
       <Pressable onPress={onOpen} style={styles.imageWrap}>
-        <Text style={styles.marginChip}>{p.margin} margin</Text>
+        {p.thumbnail ? (
+          // contain, not cover: a cropped product photo (bottle top/label cut off) reads as
+          // broken - showing the whole product on its tinted background matches every other
+          // real e-commerce listing and is what "contain" is for.
+          <Image source={{ uri: p.thumbnail }} style={styles.image} contentFit="contain" />
+        ) : null}
+        {/* p.margin was a fabricated per-product placeholder %, unrelated to the real discount
+            - replaced with the actual discount (p.discount, e.g. "-5%"), same value/format the
+            old ProductCard.tsx's discount chip already used elsewhere in this app. */}
+        {hasDiscount && <Text style={styles.discountChip}>{p.discount}</Text>}
       </Pressable>
       <View style={styles.body}>
         <Pressable onPress={onOpen}>
@@ -47,7 +63,7 @@ export const DsProductCard = React.memo(function DsProductCard({ product: p, wid
           <View style={styles.priceBlock}>
             <View style={styles.priceRow}>
               <Text style={styles.price}>{p.priceLabel}</Text>
-              {showCompare && <Text style={styles.compare}>{p.compareLabel}</Text>}
+              {hasDiscount && <Text style={styles.compare}>{p.compareLabel}</Text>}
             </View>
             {p.selectOption ? (
               <Pressable onPress={onSelectOption} style={styles.selectOptionButton}>
@@ -96,7 +112,11 @@ const styles = StyleSheet.create({
     aspectRatio: 4 / 3,
     backgroundColor: ds.primarySoft,
   },
-  marginChip: {
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  discountChip: {
     position: 'absolute',
     top: 8,
     left: 8,

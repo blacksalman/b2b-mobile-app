@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
@@ -21,7 +22,6 @@ import {
 } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
 import { buildVariantPacks } from '@/components/shell/VariantSheet';
-import { discountBadgeOrEmpty } from '@/data/decorateProduct';
 import { productById } from '@/data/products';
 import {
   brandAbout,
@@ -29,6 +29,8 @@ import {
   brandStats,
   brandUsps,
   bulkTiersFor,
+  bulkUnitPrice,
+  hasBulkTiers,
   getAlsoBought,
   getSimilarProducts,
   productDescriptionFor,
@@ -37,6 +39,34 @@ import {
 import { money } from '@/utils/money';
 import { useAppState } from '@/state/AppStateContext';
 import { StubScreen } from '@/components/shell/StubScreen';
+import { useProductDetail } from '@/data/productDetailApi';
+import { toProduct, toRailProduct } from '@/data/homeApi';
+import { productHref } from '@/data/idHash';
+import { syncCartQuantity } from '@/data/cartSync';
+import { useApiCartActions } from '@/data/useApiCartActions';
+import { fetchDeliveryEstimate } from '@/lib/medusaClient';
+import type { Product } from '@/data/types';
+import type { RailProduct } from '@/data/home-content';
+
+// Strips the real product's HTML description (from Medusa's rich-text product.description)
+// down to plain text for this design's plain <Text> body - no HTML renderer/WebView dependency
+// added just for this. The source data itself stores literal "\n"/"\r\n" text (a backslash
+// followed by a letter, not an actual line break - confirmed by inspecting the raw API
+// response) inside the HTML, which is why a plain whitespace-collapse alone left visible "\n\n"
+// in the rendered text; those literal escape sequences need stripping same as the HTML tags do.
+function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\\r\\n|\\n|\\r/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 const TRUST_BADGES = [
   { name: 'GST Invoice', Icon: GstInvoiceIcon },
@@ -58,13 +88,35 @@ function addFlashLabel(name: string): string {
 // pattern, since editing the shared `(tabs)/_layout.tsx` shell is out of scope this round). See the
 // implementation report for the one known interaction this creates with the still-unmigrated
 // MiniCartFab.
+//
+// Real-data version: an `id` param that isn't a mock catalog numeric id (ids 1-10 - Buy again/
+// Fast-moving are still mock, everything else navigates here with the product's real handle,
+// e.g. "/product/nurall-capsule-60caps-ayurveda-one-8104" - see idHash.ts's productHref) is
+// fetched directly by handle via useProductDetail (productDetailApi.ts), which also pulls the
+// product's /scheme cross-sell lists. Fetching by handle (not through productRegistry) is
+// deliberate - it's what makes a cold page load or a refresh work, not just navigating in from
+// a card that already rendered this session. `product` below is the SAME Product shape either
+// way (toProduct adapts a real MedusaProduct into it) - everything downstream (bulk tiers,
+// hasOffer/price, specs) already worked off this shape and needed no changes. What's still mock
+// either way: bulk-tier pricing (a 0.94 formula, not real quantity-break pricing), the pincode
+// delivery check, rating/review content, and the "About the manufacturer" static blurb - none
+// of those have a real backend source (see the filter/Home-page wiring conversations for the
+// same conclusion elsewhere).
 export default function ProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { cart, loggedIn, addToCart, inc, dec, flash } = useAppState();
 
-  const product = productById(Number(id));
+  // `id` is either a mock catalog numeric id (Buy again/Fast-moving/Listing still link that way)
+  // or a real product's handle (every other screen's cards - see idHash.ts's productHref).
+  // Number("some-handle") is NaN, so productById correctly finds nothing for a real handle.
+  const mockProduct = productById(Number(id));
+  const detail = useProductDetail(mockProduct ? null : id);
+  const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
+
+  const product: Product | undefined = mockProduct ?? (detail.product ? toProduct(detail.product) : undefined);
+  const isReal = !mockProduct && !!product?.medusaId;
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxPick, setLightboxPick] = useState(0);
@@ -73,53 +125,113 @@ export default function ProductScreen() {
   const [productTab, setProductTab] = useState<ProductTab>('Description');
   const [pincode, setPincode] = useState('');
   const [pincodeResult, setPincodeResult] = useState('');
-  const [pendingQty, setPendingQty] = useState(2);
+  const [pendingQty, setPendingQty] = useState(1);
   // Variant picker (product id 2 only) — screen-local, matching the pre-existing precedent in this
   // app (VariantSheet/Categories already keep `variantCart` screen-local, not global).
   const [variantPick, setVariantPick] = useState(0);
   const [variantQtyMap, setVariantQtyMap] = useState<Record<number, number>>({});
 
-  const similarProducts = useMemo(() => (product ? getSimilarProducts(product, cart, loggedIn) : []), [product, cart, loggedIn]);
-  const alsoBought = useMemo(() => (product ? getAlsoBought(product, cart, loggedIn) : []), [product, cart, loggedIn]);
+  const similarProducts: RailProduct[] = useMemo(() => {
+    if (!product) return [];
+    if (mockProduct) return getSimilarProducts(product, cart, loggedIn);
+    return detail.similarProducts.map((mp) => toRailProduct(mp, cart, loggedIn));
+  }, [product, mockProduct, detail.similarProducts, cart, loggedIn]);
+  const alsoBought: RailProduct[] = useMemo(() => {
+    if (!product) return [];
+    if (mockProduct) return getAlsoBought(product, cart, loggedIn);
+    return detail.alsoBoughtProducts.map((mp) => toRailProduct(mp, cart, loggedIn));
+  }, [product, mockProduct, detail.alsoBoughtProducts, cart, loggedIn]);
   const variantPacks = useMemo(() => (product ? buildVariantPacks(product) : []), [product]);
 
-  if (!product) return <StubScreen title="Product detail" detail={`Product #${id}`} />;
+  if (!product) {
+    if (detail.loading) {
+      return (
+        <View style={[styles.screen, styles.loadingScreen]}>
+          <Text style={dsType.body}>Loading product…</Text>
+        </View>
+      );
+    }
+    return <StubScreen title="Product detail" detail={`Product #${id}`} />;
+  }
 
   const hasVariants = product.id === 2;
   const gated = !!product.gated && !loggedIn; // never true for the current seed catalog
   const cartQty = cart[product.id] || 0;
   const inCart = cartQty > 0;
   const bulkTiers = bulkTiersFor(product);
-  const specs = productSpecsFor(product);
-  const description = productDescriptionFor(product);
+  // productSpecsFor's Form/Shelf life/Licence are fixed placeholder copy for every mock product
+  // (see product-detail-content.ts) - fine for the mock catalog, but presenting them as fact for
+  // a real product would be inventing specs that were never actually set. Real products show
+  // just what's genuinely known (Brand, Pack size) instead of those three.
+  const specs = mockProduct ? productSpecsFor(product) : [
+    { k: 'Brand', v: product.brand },
+    { k: 'Pack size', v: product.cs },
+  ];
+  const description = mockProduct
+    ? productDescriptionFor(product)
+    : stripHtml(detail.product?.description ?? '') || productDescriptionFor(product);
 
   const goBack = () => router.back();
-  const goReviews = () => router.push(`/product/${product.id}/reviews`);
+  const goReviews = () => router.push(`${productHref(product)}/reviews`);
   const goCart = () => router.push('/cart');
   const goAccount = () => router.push('/account');
   const openReturnPolicy = () => flash('Full policy details coming soon');
   const openShippingPolicy = () => flash('Full policy details coming soon');
   const playBrandVideo = () => flash('Playing brand video');
 
-  const openProduct = (pid: number) => router.push(`/product/${pid}`);
+  const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
   const addProduct = (pid: number) => {
     const p = productById(pid);
     addToCart(pid, 1);
     if (p) flash(addFlashLabel(p.name));
   };
+  // Similar products / People also bought: real (API-backed) items sync to the actual Medusa
+  // cart via useApiCartActions, same as every other real product rail in the app; mock items
+  // (only reachable when this page itself is showing a mock product) keep using the plain local
+  // addProduct/inc/dec, unchanged from before.
+  const railOnAdd = (p: RailProduct) => (mockProduct ? addProduct(p.id) : addApiProduct(p));
+  const railOnInc = (p: RailProduct) => (mockProduct ? inc(p.id) : incApiProduct(p));
+  const railOnDec = (p: RailProduct) => (mockProduct ? dec(p.id) : decApiProduct(p));
 
-  const checkPincode = () => {
-    setPincodeResult(pincode && pincode.length >= 5 ? `Delivers by tomorrow, 6–9am to ${pincode}` : 'Enter a valid pincode');
+  // Real Delhivery TAT lookup (GET /store/delivery-tat), same one Ops' Dispatch/Tracking
+  // pages sit downstream of - already accounts for IST dispatch cutoffs, so `message` is
+  // ready to display as-is. storeFetch throws on a non-2xx response (the route uses 400 for a
+  // malformed pincode, 502 for a real lookup failure), so those need a catch here rather than
+  // reading `success` off a thrown error.
+  const checkPincode = async () => {
+    if (!/^\d{6}$/.test(pincode)) {
+      setPincodeResult('Enter a valid 6-digit pincode');
+      return;
+    }
+    setPincodeResult('Checking…');
+    try {
+      const estimate = await fetchDeliveryEstimate(pincode);
+      setPincodeResult(estimate.message);
+    } catch {
+      setPincodeResult('Could not check delivery estimate for this pincode');
+    }
   };
 
-  // Ported verbatim from the source's `productAdd` (Various Mobile App - Phone.dc.html line 3066,
-  // which — as a later duplicate JS object key — overrides an earlier, simpler definition at line
-  // 3015 that would have flashed a confirmation). The winning definition adds `pendingQty` units
-  // (minimum 2) and resets the stepper, but calls no `flash()` — so unlike every other add-to-cart
-  // action in this app, tapping "Add to Cart" here shows no toast. Preserved exactly, not "fixed".
+  // Ported from the source's `productAdd` (Various Mobile App - Phone.dc.html line 3066), minus
+  // the forced "minimum 2" floor - that was a fabricated MOQ rule with no real backend rule
+  // behind it, and it meant a first tap silently added 2 units instead of the 1 the qty
+  // stepper next to it was showing. Adds `pendingQty` units (now floored at 1, matching the
+  // stepper's own floor - see setPendingQty below) and resets the stepper; calls no `flash()`,
+  // unlike every other add-to-cart action in this app - preserved, not "fixed", it's the
+  // source's own quirk. Real products additionally sync the real cart.
   const productAdd = () => {
-    addToCart(product.id, Math.max(pendingQty, 2));
-    setPendingQty(2);
+    const qty = Math.max(pendingQty, 1);
+    addToCart(product.id, qty);
+    if (isReal) syncCartQuantity(product.id, cartQty + qty);
+    setPendingQty(1);
+  };
+  const incMain = () => {
+    inc(product.id);
+    if (isReal) syncCartQuantity(product.id, cartQty + 1);
+  };
+  const decMain = () => {
+    dec(product.id);
+    if (isReal) syncCartQuantity(product.id, Math.max(0, cartQty - 1));
   };
 
   const selectedPack = variantPacks[variantPick];
@@ -141,13 +253,29 @@ export default function ProductScreen() {
     setVariantQtyMap((m) => ({ ...m, [variantPick]: Math.max(0, (m[variantPick] || 0) - 1) }));
   };
 
-  const barQty = inCart ? cartQty : Math.max(pendingQty, 2);
-  const productLineTotal = money((product.price || 0) * barQty);
-  const productLineMrp = money((product.cmp || 0) * barQty);
-  const productSave = discountBadgeOrEmpty(product);
-  const hasOffer = !!product.cmp;
+  // An MRP-vs-sale-price markdown (product.cmp) and quantity-tier pricing (product.quantityTiers,
+  // the admin's separate "Quantity Discount" widget) are two independent real discount
+  // mechanisms - a product can have real tiers with no MRP discount at all (confirmed live: this
+  // exact case), or vice versa. barUnitPrice/referenceUnitPrice/showBarSavings/barSave below are
+  // qty-aware or unified across the whole page - the top price block and the sticky add-bar both
+  // read from these now, instead of the top block using its own flat, qty-unaware product.price/
+  // product.cmp (which is what left it stuck showing "no discount" even once cart qty crossed
+  // into a real tier).
+  const barQty = inCart ? cartQty : Math.max(pendingQty, 1);
+  const barUnitPrice = hasBulkTiers(product) ? bulkUnitPrice(product, barQty) : product.price || 0;
+  const referenceUnitPrice = product.cmp || product.price || 0;
+  const productLineTotal = money(barUnitPrice * barQty);
+  const productLineMrp = money(referenceUnitPrice * barQty);
+  const showBarSavings = referenceUnitPrice > 0 && barUnitPrice < referenceUnitPrice;
+  const barSave = showBarSavings ? '-' + Math.round((1 - barUnitPrice / referenceUnitPrice) * 100) + '%' : '';
 
-  const lightboxThumbs = [0, 1, 2, 3];
+  // Real products carry real photo URLs (product.images, from Medusa's product.images relation -
+  // usually more than one); the mock catalog never did (every screen just renders a solid-color
+  // placeholder box), so `hasRealImages` false keeps that exact placeholder behavior unchanged,
+  // 4 fake thumbnail slots included.
+  const galleryImages = product.images ?? [];
+  const hasRealImages = galleryImages.length > 0;
+  const lightboxThumbs = hasRealImages ? galleryImages.map((_, i) => i) : [0, 1, 2, 3];
 
   return (
     <View style={styles.screen}>
@@ -159,7 +287,11 @@ export default function ProductScreen() {
         </View>
 
         <View style={styles.photoWrap}>
-          <Pressable onPress={() => setLightboxOpen(true)} style={styles.photo} />
+          <Pressable onPress={() => setLightboxOpen(true)} style={styles.photo}>
+            {hasRealImages && (
+              <Image source={{ uri: galleryImages[lightboxPick] ?? galleryImages[0] }} style={styles.photoImage} contentFit="contain" />
+            )}
+          </Pressable>
           <Pressable onPress={() => setWishlisted((v) => !v)} style={styles.wishlistButton} hitSlop={4}>
             <HeartIcon size={16} color={ds.primaryInk} fill={wishlisted ? ds.primaryInk : 'none'} />
           </Pressable>
@@ -171,7 +303,9 @@ export default function ProductScreen() {
         </View>
         <View style={styles.thumbRow}>
           {lightboxThumbs.map((i) => (
-            <Pressable key={i} onPress={() => setLightboxPick(i)} style={[styles.thumb, { borderColor: lightboxPick === i ? ds.primary : 'transparent' }]} />
+            <Pressable key={i} onPress={() => setLightboxPick(i)} style={[styles.thumb, { borderColor: lightboxPick === i ? ds.primary : 'transparent' }]}>
+              {hasRealImages && <Image source={{ uri: galleryImages[i] }} style={styles.thumbImage} contentFit="contain" />}
+            </Pressable>
           ))}
         </View>
 
@@ -247,20 +381,20 @@ export default function ProductScreen() {
               ) : (
                 <>
                   <View style={styles.divider} />
-                  {hasOffer ? (
+                  {showBarSavings ? (
                     <>
                       <View style={styles.priceRow}>
-                        <Text style={styles.priceValue}>{money(product.price || 0)}</Text>
-                        <Text style={styles.priceCompare}>{product.cmp ? money(product.cmp) : ''}</Text>
+                        <Text style={styles.priceValue}>{money(barUnitPrice)}</Text>
+                        <Text style={styles.priceCompare}>{money(referenceUnitPrice)}</Text>
                         <View style={styles.saveChip}>
-                          <Text style={styles.saveChipText}>{productSave}</Text>
+                          <Text style={styles.saveChipText}>{barSave}</Text>
                         </View>
                       </View>
                       <Text style={styles.priceSubline}>per unit · incl. trade discount · inclusive of GST</Text>
                     </>
                   ) : (
                     <>
-                      <Text style={styles.priceValueOnly}>{money(product.price || 0)}</Text>
+                      <Text style={styles.priceValueOnly}>{money(barUnitPrice)}</Text>
                       <Text style={styles.priceSubline}>MRP · per unit · excl. GST</Text>
                     </>
                   )}
@@ -290,22 +424,24 @@ export default function ProductScreen() {
           )}
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Bulk pricing</Text>
-          <View style={styles.tiersBox}>
-            {bulkTiers.map((tier) => (
-              <View key={tier.label} style={[styles.tierRow, { backgroundColor: tier.rowBg }]}>
-                <Text style={[styles.tierLabel, { color: tier.labelColor }]}>{tier.label}</Text>
-                <Text style={[styles.tierPrice, { color: tier.labelColor }]}>{tier.price}</Text>
-              </View>
-            ))}
+        {hasBulkTiers(product) && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Bulk pricing</Text>
+            <View style={styles.tiersBox}>
+              {bulkTiers.map((tier) => (
+                <View key={tier.label} style={[styles.tierRow, { backgroundColor: tier.rowBg }]}>
+                  <Text style={[styles.tierLabel, { color: tier.labelColor }]}>{tier.label}</Text>
+                  <Text style={[styles.tierPrice, { color: tier.labelColor }]}>{tier.price}</Text>
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
+        )}
 
         <View style={styles.minQtyRow}>
-          <Text style={styles.minQtyLabel}>Minimum order qty: 2 units</Text>
+          <Text style={styles.minQtyLabel}>Quantity</Text>
           <View style={styles.pendingStepper}>
-            <Pressable onPress={() => setPendingQty((q) => Math.max(q - 1, 2))} style={styles.pendingStepBtn} hitSlop={4}>
+            <Pressable onPress={() => setPendingQty((q) => Math.max(q - 1, 1))} style={styles.pendingStepBtn} hitSlop={4}>
               <Text style={styles.pendingStepGlyph}>−</Text>
             </Pressable>
             <Text style={styles.pendingQtyText}>{pendingQty}</Text>
@@ -423,43 +559,51 @@ export default function ProductScreen() {
           )}
         </View>
 
-        <View style={styles.sectionHeaderBlock}>
-          <Text style={styles.sectionTitle}>Similar products</Text>
-          <Text style={styles.sectionSubtitle}>Same category, comparable margin</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shelfRow}>
-          {similarProducts.map((p, i) => (
-            <DsProductCard
-              key={`${p.id}-${i}`}
-              product={p}
-              width={166}
-              onOpen={() => openProduct(p.id)}
-              onAdd={() => addProduct(p.id)}
-              onInc={() => inc(p.id)}
-              onDec={() => dec(p.id)}
-              onLogin={goAccount}
-            />
-          ))}
-        </ScrollView>
+        {similarProducts.length > 0 && (
+          <>
+            <View style={styles.sectionHeaderBlock}>
+              <Text style={styles.sectionTitle}>Similar products</Text>
+              <Text style={styles.sectionSubtitle}>Same category, comparable margin</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shelfRow}>
+              {similarProducts.map((p, i) => (
+                <DsProductCard
+                  key={`${p.id}-${i}`}
+                  product={p}
+                  width={166}
+                  onOpen={() => openProduct(p)}
+                  onAdd={() => railOnAdd(p)}
+                  onInc={() => railOnInc(p)}
+                  onDec={() => railOnDec(p)}
+                  onLogin={goAccount}
+                />
+              ))}
+            </ScrollView>
+          </>
+        )}
 
-        <View style={styles.sectionHeaderBlock}>
-          <Text style={styles.sectionTitle}>People also bought</Text>
-          <Text style={styles.sectionSubtitle}>Frequently ordered together</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shelfRow}>
-          {alsoBought.map((p, i) => (
-            <DsProductCard
-              key={`${p.id}-${i}`}
-              product={p}
-              width={166}
-              onOpen={() => openProduct(p.id)}
-              onAdd={() => addProduct(p.id)}
-              onInc={() => inc(p.id)}
-              onDec={() => dec(p.id)}
-              onLogin={goAccount}
-            />
-          ))}
-        </ScrollView>
+        {alsoBought.length > 0 && (
+          <>
+            <View style={styles.sectionHeaderBlock}>
+              <Text style={styles.sectionTitle}>People also bought</Text>
+              <Text style={styles.sectionSubtitle}>Frequently ordered together</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shelfRow}>
+              {alsoBought.map((p, i) => (
+                <DsProductCard
+                  key={`${p.id}-${i}`}
+                  product={p}
+                  width={166}
+                  onOpen={() => openProduct(p)}
+                  onAdd={() => railOnAdd(p)}
+                  onInc={() => railOnInc(p)}
+                  onDec={() => railOnDec(p)}
+                  onLogin={goAccount}
+                />
+              ))}
+            </ScrollView>
+          </>
+        )}
 
         <View style={styles.sectionHeaderBlock}>
           <Text style={styles.sectionTitle}>Policies</Text>
@@ -490,7 +634,7 @@ export default function ProductScreen() {
           <Text style={styles.sectionSubtitle}>Who makes this product</Text>
         </View>
         <View style={styles.card}>
-          <Text style={styles.aboutTitle}>{brandLegalName}</Text>
+          <Text style={styles.aboutTitle}>{mockProduct ? brandLegalName : product.brand || brandLegalName}</Text>
           <View style={styles.statsGrid}>
             {brandStats.map((s) => (
               <View key={s.label} style={styles.statBox}>
@@ -523,11 +667,11 @@ export default function ProductScreen() {
         <View style={styles.addBarInfo}>
           <View style={styles.addBarTotalRow}>
             <Text style={styles.addBarTotal}>{productLineTotal}</Text>
-            {hasOffer && (
+            {showBarSavings && (
               <>
                 <Text style={styles.addBarMrp}>{productLineMrp}</Text>
                 <View style={styles.saveChip}>
-                  <Text style={styles.saveChipText}>{productSave}</Text>
+                  <Text style={styles.saveChipText}>{barSave}</Text>
                 </View>
               </>
             )}
@@ -535,11 +679,11 @@ export default function ProductScreen() {
         </View>
         {inCart ? (
           <View style={styles.addBarStepper}>
-            <Pressable onPress={() => dec(product.id)} style={styles.addBarStepBtn} hitSlop={4}>
+            <Pressable onPress={decMain} style={styles.addBarStepBtn} hitSlop={4}>
               {cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepGlyph}>−</Text>}
             </Pressable>
             <Text style={styles.stepQty}>{cartQty}</Text>
-            <Pressable onPress={() => inc(product.id)} style={styles.addBarStepBtn} hitSlop={4}>
+            <Pressable onPress={incMain} style={styles.addBarStepBtn} hitSlop={4}>
               <Text style={styles.stepGlyph}>+</Text>
             </Pressable>
           </View>
@@ -556,10 +700,16 @@ export default function ProductScreen() {
           <Pressable onPress={() => setLightboxOpen(false)} style={[styles.lightboxClose, { top: insets.top + 12 }]}>
             <CloseIcon size={14} color={ds.ink} strokeWidth={2.2} />
           </Pressable>
-          <View style={styles.lightboxPhoto} />
+          <View style={styles.lightboxPhoto}>
+            {hasRealImages && (
+              <Image source={{ uri: galleryImages[lightboxPick] ?? galleryImages[0] }} style={styles.lightboxPhotoImage} contentFit="contain" />
+            )}
+          </View>
           <View style={styles.lightboxThumbs}>
             {lightboxThumbs.map((i) => (
-              <Pressable key={i} onPress={() => setLightboxPick(i)} style={[styles.lightboxThumb, { borderColor: lightboxPick === i ? ds.primary : 'transparent' }]} />
+              <Pressable key={i} onPress={() => setLightboxPick(i)} style={[styles.lightboxThumb, { borderColor: lightboxPick === i ? ds.primary : 'transparent' }]}>
+                {hasRealImages && <Image source={{ uri: galleryImages[i] }} style={styles.thumbImage} contentFit="contain" />}
+              </Pressable>
             ))}
           </View>
         </View>
@@ -570,17 +720,20 @@ export default function ProductScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: ds.canvas },
+  loadingScreen: { alignItems: 'center', justifyContent: 'center' },
   scrollContent: { paddingBottom: 0 },
   headerRow: { flexShrink: 0, paddingHorizontal: dsSpacing.lg, paddingBottom: dsSpacing.md, backgroundColor: ds.surface, borderBottomWidth: 1, borderBottomColor: ds.line, flexDirection: 'row', alignItems: 'center', gap: dsSpacing.md },
   backButton: { width: 40, height: 40, borderRadius: dsRadii.pill, backgroundColor: ds.canvas, alignItems: 'center', justifyContent: 'center' },
 
   photoWrap: { position: 'relative' },
   photo: { aspectRatio: 4 / 3, backgroundColor: ds.primarySoft },
+  photoImage: { width: '100%', height: '100%' },
   wishlistButton: { position: 'absolute', top: 12, right: dsSpacing.lg, width: 36, height: 36, borderRadius: dsRadii.pill, backgroundColor: ds.surface, boxShadow: '0 1px 2px rgba(12,71,51,.12)', alignItems: 'center', justifyContent: 'center' },
   dotsRow: { position: 'absolute', left: 0, right: 0, bottom: dsSpacing.md, flexDirection: 'row', justifyContent: 'center', gap: 4 },
   dot: { width: 6, height: 6, borderRadius: dsRadii.pill },
   thumbRow: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.sm, maxWidth: 280 },
-  thumb: { flex: 1, aspectRatio: 1, borderRadius: dsRadii.input, backgroundColor: ds.canvas, borderWidth: 1.5 },
+  thumb: { flex: 1, aspectRatio: 1, borderRadius: dsRadii.input, backgroundColor: ds.canvas, borderWidth: 1.5, overflow: 'hidden' },
+  thumbImage: { width: '100%', height: '100%' },
 
   infoBlock: { marginTop: dsSpacing.md, paddingHorizontal: dsSpacing.lg },
   infoTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: dsSpacing.md },
@@ -715,7 +868,8 @@ const styles = StyleSheet.create({
 
   lightbox: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(12,71,51,.45)', zIndex: 80, alignItems: 'center', justifyContent: 'center', paddingHorizontal: dsSpacing.lg, paddingBottom: dsSpacing.lg },
   lightboxClose: { position: 'absolute', right: dsSpacing.lg, width: 32, height: 32, borderRadius: dsRadii.button, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },
-  lightboxPhoto: { width: '100%', aspectRatio: 1, borderRadius: dsRadii.button, backgroundColor: ds.surface },
+  lightboxPhoto: { width: '100%', aspectRatio: 1, borderRadius: dsRadii.button, backgroundColor: ds.surface, overflow: 'hidden' },
+  lightboxPhotoImage: { width: '100%', height: '100%' },
   lightboxThumbs: { flexDirection: 'row', gap: dsSpacing.sm, marginTop: dsSpacing.md },
-  lightboxThumb: { width: 56, height: 56, borderRadius: dsRadii.input, backgroundColor: ds.surface, borderWidth: 1.5 },
+  lightboxThumb: { width: 56, height: 56, borderRadius: dsRadii.input, backgroundColor: ds.surface, borderWidth: 1.5, overflow: 'hidden' },
 });

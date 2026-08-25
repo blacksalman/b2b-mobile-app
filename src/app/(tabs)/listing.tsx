@@ -10,25 +10,35 @@ import { FilterSheet } from '@/components/shell/FilterSheet';
 import { getListingProducts } from '@/data/listing-content';
 import { useAppState } from '@/state/AppStateContext';
 import { productById } from '@/data/products';
+import { useCategoryProducts } from '@/data/categoriesApi';
+import { toRailProduct } from '@/data/homeApi';
+import { useApiCartActions } from '@/data/useApiCartActions';
+import { productHref } from '@/data/idHash';
 
 function addFlashLabel(name: string): string {
   return name.split(' ').slice(0, 2).join(' ') + ' added';
 }
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isListing
-// block, line 660). Still the same generic Listing screen (line 653 in the old source) that replaced
-// what used to be two separate Brand and Category-detail screens — driven by the same
-// `listingIds`/`listingTitle`/`listingTagline`/`listingTint` route params, used for brand cards,
-// category taps, prescription groups, concern shelves, promo banners, and Home's Best sellers/New
-// arrivals/Featured "View all" links alike. Only the visual layer + `getListingProducts`' margin
-// formula changed this round — the `ids`/`title`/`tagline`/`tint` param contract is untouched, so
-// every existing call site (`index.tsx`'s `openListingByCategory`, `categories.tsx`'s category rail)
-// keeps working unchanged. `FilterSheet` itself is still the old-styled sheet — its restyle is
-// deferred to a later round, same as the Categories round.
+// block, line 660). Two data paths share this one screen now:
+//
+// - Real (Brand cards - index.tsx's openBrandListing): a `collectionId` param instead of `ids`.
+//   A brand can have 40-160+ products, way past what's reasonable to pass as a comma-joined id
+//   list in a URL, so this reuses Categories' own real product-fetch (useCategoryProducts,
+//   locked to this one collection) rather than an ids-based approach. Sort/price/availability
+//   filters are real here too (shared AppStateContext filters), search-in-brand is real
+//   (products-search), cart is real (useApiCartActions) - the same infrastructure Categories/
+//   Search already proved out, just scoped to one collection_id.
+// - Mock (everything else - concern shelves, Best sellers/New arrivals/Featured "View all",
+//   promo banners): still the original `ids`/getListingProducts path, unchanged - wiring those
+//   to real data is a separate, not-yet-requested piece of work (they'd need product-section-id
+//   scoped fetching, which useCategoryProducts doesn't support).
+//
+// `FilterSheet` itself is still the old-styled sheet — its restyle is deferred to a later round.
 export default function ListingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ ids: string; title: string; tagline: string; tint: string }>();
+  const params = useLocalSearchParams<{ ids: string; collectionId: string; title: string; tagline: string; tint: string }>();
   const {
     cart,
     loggedIn,
@@ -50,18 +60,34 @@ export default function ListingScreen() {
   } = useAppState();
 
   const [query, setQuery] = useState('');
+  const isReal = !!params.collectionId;
+  const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
 
-  const ids = useMemo(() => (params.ids ? params.ids.split(',').map(Number).filter((n) => !Number.isNaN(n)) : []), [params.ids]);
   const title = params.title ?? '';
   const tagline = params.tagline ?? '';
   const tint = params.tint || ds.primarySoft;
 
-  // Ported verbatim from `listingItemCount:s.listingIds.length` (line 1597) — the RAW id-set size,
-  // not the query-filtered count shown below it.
-  const itemCount = ids.length;
-  const listingProducts = useMemo(() => getListingProducts(ids, cart, loggedIn, query), [ids, cart, loggedIn, query]);
+  // Mock path.
+  const ids = useMemo(() => (params.ids ? params.ids.split(',').map(Number).filter((n) => !Number.isNaN(n)) : []), [params.ids]);
+  const mockListingProducts = useMemo(() => getListingProducts(ids, cart, loggedIn, query), [ids, cart, loggedIn, query]);
 
-  const openProduct = (id: number) => router.push(`/product/${id}`);
+  // Real path - sort/price/availability come from the shared filter state same as Categories;
+  // brand is force-locked to this page's own collectionId regardless of filters.brand, since a
+  // brand-scoped page picking a *different* brand doesn't make sense.
+  const realFilters = useMemo(
+    () => ({ sort: filters.sort, price: filters.price, avail: filters.avail, brandCollectionIds: isReal ? [params.collectionId] : [] }),
+    [filters.sort, filters.price, filters.avail, isReal, params.collectionId]
+  );
+  const productsState = useCategoryProducts(null, query, realFilters, isReal);
+  const realListingProducts = useMemo(
+    () => productsState.results.map((p) => toRailProduct(p, cart, loggedIn)),
+    [productsState.results, cart, loggedIn]
+  );
+
+  const listingProducts = isReal ? realListingProducts : mockListingProducts;
+  const itemCount = isReal ? productsState.count : ids.length;
+
+  const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
   const addProduct = (id: number) => {
     const p = productById(id);
     addToCart(id, 1);
@@ -126,10 +152,10 @@ export default function ListingScreen() {
               key={p.id}
               product={p}
               width="48%"
-              onOpen={() => openProduct(p.id)}
-              onAdd={() => addProduct(p.id)}
-              onInc={() => inc(p.id)}
-              onDec={() => dec(p.id)}
+              onOpen={() => openProduct(p)}
+              onAdd={() => (isReal ? addApiProduct(p) : addProduct(p.id))}
+              onInc={() => (isReal ? incApiProduct(p) : inc(p.id))}
+              onDec={() => (isReal ? decApiProduct(p) : dec(p.id))}
               onLogin={goLogin}
             />
           ))}
@@ -146,6 +172,12 @@ export default function ListingScreen() {
         onTogglePrice={setFilterPrice}
         onToggleMulti={toggleFilterMulti}
         onClear={clearFilters}
+        resultCount={isReal ? productsState.count : undefined}
+        // This page is already locked to one brand (collectionId) - showing the full brand
+        // list here would let picking a *different* brand silently do nothing (this page
+        // ignores filters.brand entirely, see realFilters above), so it's hidden rather than
+        // shown-but-broken.
+        brandOptions={isReal ? [] : undefined}
       />
     </View>
   );

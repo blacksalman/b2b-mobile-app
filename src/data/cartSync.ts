@@ -1,0 +1,127 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createCart, addLineItem, updateLineItemQuantity, removeLineItem, fetchCart } from '@/lib/medusaCart';
+import { registerProduct } from './productRegistry';
+import { hashProductId } from './idHash';
+import type { CartState, Product } from './types';
+
+// Bridges the app's existing local numeric-keyed cart (AppStateContext - untouched by this) to
+// a real Medusa cart, for API-backed product cards only (mock products like Buy again/
+// Fast-moving have no real variant to add). Keyed by the same hashed numeric id (idHash.ts)
+// already used everywhere else in the UI layer, so callers never need to look up the real
+// string product/variant id themselves.
+//
+// The cart id IS persisted now (AsyncStorage - works on web via localStorage and on native),
+// unlike AppStateContext's own cart/wishlist/login state, which stays intentionally
+// unpersisted (its own comment: "resets on every fresh app load"). A real cart needs to survive
+// a refresh - that's the whole point of using Medusa's cart instead of just local state - so
+// this one module diverges from that convention on purpose.
+const CART_ID_STORAGE_KEY = 'medusa_cart_id';
+
+let cartIdPromise: Promise<string> | null = null;
+const lineItemIdByHashId = new Map<number, string>();
+const variantIdByHashId = new Map<number, string>();
+
+async function ensureCartId(): Promise<string> {
+  if (!cartIdPromise) {
+    cartIdPromise = (async () => {
+      const persisted = await AsyncStorage.getItem(CART_ID_STORAGE_KEY);
+      if (persisted) {
+        try {
+          const cart = await fetchCart(persisted);
+          if (!cart.completed_at) return cart.id;
+          // Already turned into an order - fall through and create a fresh one.
+        } catch {
+          // Persisted id is stale/invalid - fall through and create a fresh one.
+        }
+      }
+      const cart = await createCart();
+      await AsyncStorage.setItem(CART_ID_STORAGE_KEY, cart.id);
+      return cart.id;
+    })();
+  }
+  return cartIdPromise;
+}
+
+// Called once per API-backed product as it's decorated (see toRailProduct in homeApi.ts) so a
+// variant id is on hand by the time the user can actually press Add/Inc/Dec.
+export function registerApiProductVariant(hashId: number, variantId: string): void {
+  variantIdByHashId.set(hashId, variantId);
+}
+
+// Fire-and-forget: the caller has already updated local cart state optimistically (same as
+// every other add/inc/dec in this app today), so a sync failure here is logged, not surfaced -
+// mirrors the backend's own "notify, don't block" convention for non-critical side effects.
+export async function syncCartQuantity(hashId: number, quantity: number): Promise<void> {
+  try {
+    const cartId = await ensureCartId();
+    const existingLineItemId = lineItemIdByHashId.get(hashId);
+
+    if (!existingLineItemId) {
+      if (quantity <= 0) return;
+      const variantId = variantIdByHashId.get(hashId);
+      if (!variantId) {
+        console.warn(`[cartSync] no variant registered for product ${hashId}, skipping sync`);
+        return;
+      }
+      const cart = await addLineItem(cartId, variantId, quantity);
+      const item = cart.items.find((i) => i.variant_id === variantId);
+      if (item) lineItemIdByHashId.set(hashId, item.id);
+      return;
+    }
+
+    if (quantity <= 0) {
+      await removeLineItem(cartId, existingLineItemId);
+      lineItemIdByHashId.delete(hashId);
+      return;
+    }
+
+    await updateLineItemQuantity(cartId, existingLineItemId, quantity);
+  } catch (err) {
+    console.warn('[cartSync] failed to sync cart quantity', err);
+  }
+}
+
+// Called once on app start (AppStateProvider) to restore whatever was in the persisted cart
+// before this reload. Re-seeds this module's own line-item/variant maps directly from the
+// fetched cart (so a subsequent inc/dec doesn't try to re-add an item that already exists
+// server-side) and also registers each item into productRegistry using the cart's own
+// product_title/variant_title/unit_price - the same fields Cart/mini-cart need - so totals are
+// correct immediately, without waiting for Home to fetch and decorate its sections first.
+export async function hydrateCartState(): Promise<CartState> {
+  try {
+    const persisted = await AsyncStorage.getItem(CART_ID_STORAGE_KEY);
+    if (!persisted) return {};
+
+    const cart = await fetchCart(persisted);
+    if (cart.completed_at) {
+      await AsyncStorage.removeItem(CART_ID_STORAGE_KEY);
+      return {};
+    }
+    cartIdPromise = Promise.resolve(cart.id);
+
+    const state: CartState = {};
+    for (const item of cart.items) {
+      const hashId = hashProductId(item.product_id);
+      lineItemIdByHashId.set(hashId, item.id);
+      variantIdByHashId.set(hashId, item.variant_id);
+      state[hashId] = item.quantity;
+
+      const product: Product = {
+        id: hashId,
+        name: item.product_title,
+        brand: '',
+        cs: item.variant_title,
+        price: item.unit_price,
+        tint: '#F5F5F5',
+        cat: '',
+        gated: false,
+        thumbnail: item.thumbnail,
+      };
+      registerProduct(product);
+    }
+    return state;
+  } catch (err) {
+    console.warn('[cartSync] failed to hydrate cart from storage', err);
+    return {};
+  }
+}

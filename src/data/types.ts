@@ -9,6 +9,18 @@ export interface Product {
   cat: string; // category name, matches a Category.name
   badge?: string; // e.g. 'Deal', '-25%', 'Highly rated'
   gated?: boolean; // none of the seed products set this — gating path exists but is unreachable, by design
+  thumbnail?: string | null; // real product photo URL - only API-backed products (homeApi.ts) set this; mock catalog has none
+  images?: string[]; // real product gallery URLs (product/[id].tsx's lightbox/thumbnails) - API-backed only
+  medusaId?: string; // the real Medusa product id this was built from - API-backed only
+  handle?: string; // real product slug (e.g. "nurall-capsule-60caps-ayurveda-one-8104") - API-backed
+  // only. product/[id].tsx routes by this when present (see idHash.ts's productHref) instead of the
+  // numeric id, and fetches product detail by handle directly - readable in the URL, and (unlike the
+  // numeric hashId) resolvable on a cold page load/refresh without depending on productRegistry.
+  quantityTiers?: { minQty: number; maxQty: number | null; amount: number }[]; // real per-variant
+  // quantity-discount price rows (admin's "Quantity Discount" widget, e.g. "3 qty = 5% off") -
+  // API-backed only. Independent of `cmp` (a separate MRP/sale-price concept) - a product can have
+  // real tiers with no cmp discount at all, which product-detail-content.ts's bulkTiersFor/
+  // bulkUnitPrice account for. length <= 1 means just the qty=1 baseline row, i.e. no real tiers.
 }
 
 export interface Category {

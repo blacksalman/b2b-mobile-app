@@ -47,17 +47,53 @@ export function getAlsoBought(product: Product, cart: CartState, loggedIn: boole
   return reversed.map((p, i) => decorate(p, cart, loggedIn, ALSO_BOUGHT_RATINGS[i]));
 }
 
+// True only when a product has real quantity-discount tiers (admin's "Quantity Discount"
+// widget) beyond the implicit qty=1 baseline row - see toProduct in homeApi.ts for how these
+// get attached. Mock catalog products never set quantityTiers, so this is always false for them.
+export function hasBulkTiers(product: Product): boolean {
+  return !!product.quantityTiers && product.quantityTiers.length > 1;
+}
+
 // Ported verbatim from the new design's `bulkTiers` (line 3045) — 3-tier pricing using the shared
 // `BULK` multiplier (0.94), the first row highlighted in `primarySoft`/`primaryInk`, the rest plain.
-// Distinct from the old design's 2-tier "5% off" table this replaces.
+// Distinct from the old design's 2-tier "5% off" table this replaces. Only used as a fallback for
+// the mock catalog now - a real product with real quantityTiers renders those instead (below).
 const BULK = 0.94;
+const ROW_COLORS = [
+  { rowBg: '#DCF5E9', labelColor: '#0C4733' },
+  { rowBg: '#FFFFFF', labelColor: '#586360' },
+];
+
 export function bulkTiersFor(product: Product): { label: string; price: string; rowBg: string; labelColor: string }[] {
+  if (hasBulkTiers(product)) {
+    return product.quantityTiers!.map((tier, i) => ({
+      label: tier.maxQty != null ? `${tier.minQty} - ${tier.maxQty} units` : `${tier.minQty}+ units`,
+      price: money(tier.amount) + '/unit',
+      ...ROW_COLORS[Math.min(i, ROW_COLORS.length - 1)],
+    }));
+  }
   const base = product.price || 12;
   return [
     { label: '1 - 9 units', price: money(base) + '/unit', rowBg: '#DCF5E9', labelColor: '#0C4733' },
     { label: '10 - 24 units', price: money(base * BULK) + '/unit', rowBg: '#FFFFFF', labelColor: '#586360' },
     { label: '25+ units', price: money(base * BULK * 0.945) + '/unit', rowBg: '#FFFFFF', labelColor: '#586360' },
   ];
+}
+
+// Same tier breakpoints/multipliers as bulkTiersFor's mock fallback, as a raw number instead of
+// a formatted table row - lets product/[id].tsx's sticky add-bar total apply the real (or, for
+// the mock catalog, approximated) bulk discount as qty increases, instead of the table being
+// purely decorative.
+export function bulkUnitPrice(product: Product, qty: number): number {
+  if (hasBulkTiers(product)) {
+    const tiers = product.quantityTiers!;
+    const tier = tiers.find((t) => qty >= t.minQty && (t.maxQty == null || qty <= t.maxQty));
+    return tier ? tier.amount : (tiers[0]?.amount ?? product.price ?? 0);
+  }
+  const base = product.price || 12;
+  if (qty >= 25) return base * BULK * 0.945;
+  if (qty >= 10) return base * BULK;
+  return base;
 }
 
 // Ported verbatim from `productSpecs` (line 3044) — same fixed Form/Shelf life/Licence for every

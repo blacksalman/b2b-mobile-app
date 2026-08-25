@@ -1,6 +1,14 @@
 import { products } from './products';
+import { getRegisteredProduct } from './productRegistry';
 import { money } from '@/utils/money';
-import type { CartState } from './types';
+import type { CartState, Product } from './types';
+
+// Mock catalog first (ids 1-10), then real API-backed products registered by
+// homeApi.ts's toRailProduct (see productRegistry.ts for why this fallback exists -
+// this function used to crash on any real product's id).
+function resolveProduct(id: number): Product | undefined {
+  return products.find((x) => x.id === id) ?? getRegisteredProduct(id);
+}
 
 export interface CartLine {
   id: number;
@@ -43,10 +51,10 @@ export interface CartTotals {
 export function computeCartTotals(cart: CartState): CartTotals {
   const ids = Object.keys(cart)
     .map(Number)
-    .filter((id) => cart[id] > 0);
+    .filter((id) => cart[id] > 0 && resolveProduct(id));
 
   const cartLines: CartLine[] = ids.map((id) => {
-    const product = products.find((x) => x.id === id)!;
+    const product = resolveProduct(id)!;
     const qty = cart[id];
     const unit = product.price || 12;
     const mrp = product.cmp || unit;
@@ -68,11 +76,11 @@ export function computeCartTotals(cart: CartState): CartTotals {
   });
 
   const sub = ids.reduce((a, id) => {
-    const product = products.find((x) => x.id === id)!;
+    const product = resolveProduct(id)!;
     return a + (product.price || 12) * cart[id];
   }, 0);
   const mrpSub = ids.reduce((a, id) => {
-    const product = products.find((x) => x.id === id)!;
+    const product = resolveProduct(id)!;
     return a + (product.cmp || product.price || 12) * cart[id];
   }, 0);
   const disc = sub > 200 ? sub * 0.2 : sub > 100 ? sub * 0.1 : 0;

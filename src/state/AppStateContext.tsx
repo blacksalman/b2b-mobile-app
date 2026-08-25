@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type { CartState } from '@/data/types';
 import type { FilterTabName } from '@/data/categories-content';
 import { computeCartTotals, type CartTotals } from '@/data/cartTotals';
+import { hydrateCartState } from '@/data/cartSync';
 
 export type FilterMultiKind = 'avail' | 'brand' | 'ing' | 'concern' | 'form';
 
@@ -26,8 +27,12 @@ export const DEFAULT_FILTERS: FilterSelections = {
   form: [],
 };
 
-// Ported verbatim from the source prototype's initial state (line 1378): cart {1:2,3:1}, wish [2,3,7],
-// loggedIn false. Not persisted — resets to these seed values on every fresh app load, same as source.
+// Ported verbatim from the source prototype's initial state (line 1378): wish [2,3,7],
+// loggedIn false. wish/loggedIn/filters stay unpersisted, resetting on every fresh app load,
+// same as source. `cart` is the one exception: it now starts empty and gets rehydrated from
+// the real Medusa cart (see cartSync.ts's hydrateCartState) once one exists to rehydrate - the
+// old hardcoded seed {1:2,3:1} was mock-catalog-only test data that had no business showing up
+// as "already in your cart" once the cart page reflects real ordering.
 // Filter selections (sortPick/pricePick/etc.) and the filter-sheet open/tab state are global in the
 // source too (line 1358-1360ish), shared between the Categories screen and the Listing screen —
 // picking a filter on one and navigating to the other shows the same active-filter-pills row on both.
@@ -42,7 +47,7 @@ interface AppState {
 }
 
 const initialState: AppState = {
-  cart: { 1: 2, 3: 1 },
+  cart: {},
   wish: [2, 3, 7],
   loggedIn: false,
   toast: '',
@@ -56,6 +61,7 @@ type Action =
   | { type: 'INC'; id: number }
   | { type: 'DEC'; id: number }
   | { type: 'REMOVE_FROM_CART'; id: number }
+  | { type: 'SET_CART'; cart: CartState }
   | { type: 'SET_LOGGED_IN'; value: boolean }
   | { type: 'SHOW_TOAST'; message: string }
   | { type: 'HIDE_TOAST' }
@@ -76,6 +82,11 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, cart: { ...state.cart, [action.id]: (state.cart[action.id] || 0) + action.qty } };
     case 'INC':
       return { ...state, cart: { ...state.cart, [action.id]: (state.cart[action.id] || 0) + 1 } };
+    // Rehydration from the persisted Medusa cart (see the useEffect below) - merged over
+    // whatever's already in local state rather than replacing it outright, in case something
+    // was added locally in the brief window before the hydrate fetch resolves.
+    case 'SET_CART':
+      return { ...state, cart: { ...state.cart, ...action.cart } };
     case 'DEC':
       return { ...state, cart: { ...state.cart, [action.id]: Math.max(0, (state.cart[action.id] || 0) - 1) } };
     case 'REMOVE_FROM_CART':
@@ -140,6 +151,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
+  // Restore whatever was in the persisted Medusa cart before this reload (see cartSync.ts).
+  // Runs once on mount; a no-op (empty cart, nothing dispatched) when there's no persisted
+  // cart id yet, e.g. first-ever app load.
+  useEffect(() => {
+    let cancelled = false;
+    hydrateCartState().then((cart) => {
+      if (!cancelled && Object.keys(cart).length > 0) dispatch({ type: 'SET_CART', cart });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const flash = useCallback((message: string) => {
