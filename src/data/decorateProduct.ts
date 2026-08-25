@@ -19,7 +19,14 @@ export function decorateProduct(
   gatePricingEnabled = true,
 ): DecoratedProduct {
   const gated = isGated(product, gatePricingEnabled, loggedIn);
-  const disc = loggedIn ? 0.9 : 1;
+  // Blanket "logged-in trade discount" from the original mock-catalog prototype - no backend
+  // counterpart at all (confirmed live: the real Medusa cart charges the full real price with no
+  // such discount), so it must only ever apply to the mock catalog, never a real API-backed
+  // product (product.medusaId only ever set for those) - otherwise every real price label here
+  // silently undercuts the real price by 10% for a logged-in shopper while Cart/Checkout (reading
+  // the real cart directly) show the true, higher number.
+  const isRealProduct = !!product.medusaId;
+  const disc = loggedIn && !isRealProduct ? 0.9 : 1;
   // Real GST rate (product.taxRate, taxRates.ts) folded into every customer-facing price label
   // below - product.price/product.cmp themselves stay the raw pre-tax base (still used
   // correctly by quantity-tier math, cart sync, and the real Medusa cart's own tax calculation,
