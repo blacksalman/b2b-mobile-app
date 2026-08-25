@@ -10,8 +10,14 @@ export interface MedusaCartLineItem {
   product_id: string;
   product_title: string;
   variant_title: string;
+  product_collection: string | null;
   thumbnail: string | null;
   unit_price: number;
+  // Native Medusa field - the item's pre-discount/MRP unit price, null when there isn't a real
+  // markdown on this line (confirmed live: null for a product only discounted via quantity-tier
+  // pricing, set for a genuine MRP-vs-sale-price product). This is what backs Cart's real
+  // strike-through MRP/discount%, not a locally-recomputed guess.
+  compare_at_unit_price: number | null;
   quantity: number;
 }
 

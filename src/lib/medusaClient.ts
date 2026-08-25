@@ -133,11 +133,26 @@ export interface MedusaVariantPriceTier {
   price_list_id: string | null;
 }
 
+// Real stock fields - same shape/logic the backend's own /store/products-search `in_stock`
+// filter uses (see isVariantInStock in src/api/store/products-search/route.ts): a variant is in
+// stock if it isn't inventory-tracked, or allows backorder, or some stock location has
+// available_quantity > 0.
+export interface MedusaVariantInventoryLevel {
+  available_quantity: number;
+}
+
+export interface MedusaVariantInventoryItem {
+  inventory?: { location_levels?: MedusaVariantInventoryLevel[] };
+}
+
 export interface MedusaVariant {
   id: string;
   title: string;
   calculated_price?: MedusaVariantPrice;
   prices?: MedusaVariantPriceTier[];
+  manage_inventory?: boolean;
+  allow_backorder?: boolean;
+  inventory_items?: MedusaVariantInventoryItem[];
 }
 
 export interface MedusaProduct {
@@ -173,6 +188,9 @@ const PRODUCT_FIELDS = [
   'variants.prices.min_quantity',
   'variants.prices.max_quantity',
   'variants.prices.price_list_id',
+  'variants.manage_inventory',
+  'variants.allow_backorder',
+  'variants.inventory_items.inventory.location_levels.available_quantity',
 ].join(',');
 
 // Native Medusa store product list (this backend has no custom /store/products route -

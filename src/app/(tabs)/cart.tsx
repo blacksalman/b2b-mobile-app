@@ -5,34 +5,76 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsElevation } from '@/theme';
 import { ArrowRightIcon, SmallBackChevronIcon } from '@/icons';
 import { CartLineCard } from '@/components/composite/CartLineCard';
+import { useRealCart, type RealCartLine } from '@/data/cartApi';
+import type { CartLine } from '@/data/cartTotals';
 import { useAppState } from '@/state/AppStateContext';
+import { hashProductId } from '@/data/idHash';
+
+// Adapts a real cart line into the same CartLine shape CartLineCard already renders (shared with
+// MiniCartSheet, left untouched) - no new fields/UI added to that component beyond the optional
+// `thumbnail` it already gained. `tint` is just the neutral backdrop behind the real photo now.
+function toCartLine(line: RealCartLine): CartLine {
+  return {
+    id: hashProductId(line.productId),
+    tint: ds.primarySoft,
+    name: line.name,
+    brandUpper: line.brand.toUpperCase(),
+    caseLabel: line.cs,
+    qty: line.qty,
+    total: line.lineTotalLabel,
+    mrpTotal: line.lineMrpTotalLabel ?? line.lineTotalLabel,
+    priceEach: line.unitPriceLabel,
+    mrpEach: line.unitMrpLabel ?? line.unitPriceLabel,
+    hasOffer: line.hasDiscount,
+    noOffer: !line.hasDiscount,
+    discount: line.discountLabel ?? '',
+    thumbnail: line.thumbnail,
+  };
+}
 
 // Rebuilt against the new AyurvedaOne design system (screen_Cart.html, isCart block). `goHome` is
 // still the header's only back handler (source never routes Cart's back button anywhere else).
-// New this round: a visible "Volume discount" summary row (`hasVolumeDiscount`/`volumeDiscount`,
-// now surfaced by computeCartTotals) — the old design folded this silently into the total with no
-// line item; the new source shows it explicitly whenever the tiered discount actually applies.
+// Backed by the real Medusa cart now (useRealCart, cartApi.ts) instead of the old local
+// computeCartTotals - real images/MRP/discount%, and the old "Volume discount" row is gone
+// entirely (it was a fabricated 10%/20%-off-arbitrary-subtotal-thresholds rule with no real
+// backend promotion behind it, not something to keep showing a made-up number for).
 export default function CartScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { inc, dec, removeFromCart, cartTotals } = useAppState();
+  const { inc, dec, removeFromCart } = useAppState();
   const {
-    cartLines,
+    loading,
+    lines,
     cartEmpty,
     cartHasItems,
-    cartCount,
-    subtotal,
-    taxAmount,
-    total,
-    mrpTotal,
-    cartHasDiscount,
-    savePercent,
-    volumeDiscount,
-    hasVolumeDiscount,
-  } = cartTotals;
+    itemCount,
+    subtotalLabel,
+    taxLabel,
+    totalLabel,
+    hasDiscount,
+    mrpTotalLabel,
+    updateQuantity,
+  } = useRealCart();
 
   const goHome = () => router.push('/');
   const goCheckout = () => router.push('/checkout');
+
+  // Real cart mutations (line-item id) drive the actual server-side cart; the local numeric
+  // cart (AppStateContext) is only nudged alongside purely to keep the header's mini-cart FAB
+  // badge count in sync elsewhere in the app - same hashProductId(product_id) convention
+  // hydrateCartState already uses to rebuild that local state from a real cart on app boot.
+  const lineInc = (line: RealCartLine) => {
+    updateQuantity(line.id, line.qty + 1);
+    inc(hashProductId(line.productId));
+  };
+  const lineDec = (line: RealCartLine) => {
+    updateQuantity(line.id, Math.max(0, line.qty - 1));
+    dec(hashProductId(line.productId));
+  };
+  const lineRemove = (line: RealCartLine) => {
+    updateQuantity(line.id, 0);
+    removeFromCart(hashProductId(line.productId));
+  };
 
   return (
     <View style={styles.screen}>
@@ -47,7 +89,7 @@ export default function CartScreen() {
         style={styles.body}
         contentContainerStyle={[styles.bodyContent, !cartHasItems && { paddingBottom: insets.bottom + dsSpacing.xl }]}
       >
-        {cartEmpty && (
+        {!loading && cartEmpty && (
           <View style={styles.emptyState}>
             <View style={styles.emptyIcon} />
             <Text style={styles.emptyTitle}>No cases yet</Text>
@@ -58,10 +100,10 @@ export default function CartScreen() {
           </View>
         )}
 
-        {cartLines.length > 0 && (
+        {lines.length > 0 && (
           <View style={styles.lines}>
-            {cartLines.map((line) => (
-              <CartLineCard key={line.id} line={line} onInc={() => inc(line.id)} onDec={() => dec(line.id)} onRemove={() => removeFromCart(line.id)} />
+            {lines.map((line) => (
+              <CartLineCard key={line.id} line={toCartLine(line)} onInc={() => lineInc(line)} onDec={() => lineDec(line)} onRemove={() => lineRemove(line)} />
             ))}
           </View>
         )}
@@ -73,17 +115,11 @@ export default function CartScreen() {
               <View style={styles.summaryRows}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Subtotal</Text>
-                  <Text style={styles.summaryValue}>{subtotal}</Text>
+                  <Text style={styles.summaryValue}>{subtotalLabel}</Text>
                 </View>
-                {hasVolumeDiscount && (
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Volume discount</Text>
-                    <Text style={styles.summaryValueAccent}>−{volumeDiscount}</Text>
-                  </View>
-                )}
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Tax</Text>
-                  <Text style={styles.summaryValue}>{taxAmount}</Text>
+                  <Text style={styles.summaryValue}>{taxLabel}</Text>
                 </View>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Shipping</Text>
@@ -96,13 +132,8 @@ export default function CartScreen() {
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>Total</Text>
                 <View style={styles.totalRight}>
-                  {cartHasDiscount && <Text style={styles.mrpStrike}>{mrpTotal}</Text>}
-                  <Text style={styles.totalValue}>{total}</Text>
-                  {cartHasDiscount && (
-                    <View style={styles.savePill}>
-                      <Text style={styles.savePillText}>{savePercent} off</Text>
-                    </View>
-                  )}
+                  {hasDiscount && <Text style={styles.mrpStrike}>{mrpTotalLabel}</Text>}
+                  <Text style={styles.totalValue}>{totalLabel}</Text>
                 </View>
               </View>
             </View>
@@ -113,8 +144,8 @@ export default function CartScreen() {
       {cartHasItems && (
         <View style={[styles.footer, { paddingBottom: dsSpacing.md + insets.bottom }]}>
           <View style={styles.footerInfo}>
-            <Text style={styles.footerCount} numberOfLines={1}>{cartCount} items</Text>
-            <Text style={styles.footerTotal} numberOfLines={1}>{total}</Text>
+            <Text style={styles.footerCount} numberOfLines={1}>{itemCount} items</Text>
+            <Text style={styles.footerTotal} numberOfLines={1}>{totalLabel}</Text>
           </View>
           <Pressable onPress={goCheckout} style={styles.checkoutButton}>
             <Text style={styles.checkoutButtonText}>Checkout</Text>
@@ -157,7 +188,6 @@ const styles = StyleSheet.create({
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: dsSpacing.sm },
   summaryLabel: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink2 },
   summaryValue: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
-  summaryValueAccent: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.accent },
   shippingChip: { backgroundColor: ds.primarySoft, borderRadius: dsRadii.chip, paddingHorizontal: dsSpacing.sm, paddingVertical: 4 },
   shippingChipText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22, color: ds.primaryInk },
   divider: { height: 1, backgroundColor: ds.line, marginVertical: dsSpacing.md },
@@ -166,8 +196,6 @@ const styles = StyleSheet.create({
   totalRight: { alignItems: 'flex-end' },
   mrpStrike: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, textDecorationLine: 'line-through' },
   totalValue: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk },
-  savePill: { marginLeft: 4, backgroundColor: ds.primarySoft, borderRadius: dsRadii.chip, paddingHorizontal: 4, paddingVertical: 2 },
-  savePillText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22, color: ds.primaryInk },
   footer: {
     flexShrink: 0,
     backgroundColor: ds.surface,

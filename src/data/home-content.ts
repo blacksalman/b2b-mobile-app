@@ -173,15 +173,13 @@ export const heroSlides: HeroSlide[] = [
 ];
 
 // --- Promo banner carousel (line 2753) — `eyebrow`/`title`/`sub` all render in fixed colors in the
-// new markup (no per-banner accent), so the old design's `accent` field is dropped. ---
+// new markup (no per-banner accent), so the old design's `accent` field is dropped. Read-only
+// display cards, not links to anything - the old targetListing/targetScreen navigation fields
+// were dropped once tapping these was removed. ---
 export const promoBanners = [
-  {
-    eyebrow: 'BULK PRICING', title: 'Save more on 3+ cases', sub: 'Automatic tier discounts applied at checkout',
-    tint: '#DCF5E9',
-    targetListing: { cat: 'Classical Medicines', title: 'Classical Medicines', tagline: '702 SKUs · case pricing', tint: '#DCF5E9' },
-  },
-  { eyebrow: 'NEW STOCK', title: "This week's fresh arrivals", sub: 'Restocked daily from verified farms and mills', tint: '#FCF1E0', targetScreen: 'categories' as const },
-  { eyebrow: 'FREE DELIVERY', title: 'Free delivery over ₹5,000', sub: 'On every order across all pickup zones', tint: '#EAEFF7', targetScreen: 'stores' as const },
+  { eyebrow: 'BULK PRICING', title: 'Save more on 3+ cases', sub: 'Automatic tier discounts applied at checkout', tint: '#DCF5E9' },
+  { eyebrow: 'NEW STOCK', title: "This week's fresh arrivals", sub: 'Restocked daily from verified farms and mills', tint: '#FCF1E0' },
+  { eyebrow: 'FREE DELIVERY', title: 'Free delivery over ₹5,000', sub: 'On every order across all pickup zones', tint: '#EAEFF7' },
 ];
 
 // --- Brands to know (line 2801) — card image placeholder is fixed `#DCF5E9` in the new markup, not

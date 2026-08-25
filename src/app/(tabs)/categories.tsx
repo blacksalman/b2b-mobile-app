@@ -1,15 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CloseIcon, FilterIcon, PackageIcon, SearchIcon, SmallBackChevronIcon } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
 import { FilterSheet } from '@/components/shell/FilterSheet';
-import { VariantSheet, type VariantPack } from '@/components/shell/VariantSheet';
 import { countNonSortFilters } from '@/data/categories-content';
 import { useAppState } from '@/state/AppStateContext';
-import { productById } from '@/data/products';
 import { useProductCategories, useCategoryProducts, useCollections } from '@/data/categoriesApi';
 import { toRailProduct } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
@@ -37,8 +35,6 @@ export default function CategoriesScreen() {
   const {
     cart,
     loggedIn,
-    addToCart,
-    flash,
     filterOpen,
     filterTab,
     setFilterOpen,
@@ -58,13 +54,6 @@ export default function CategoriesScreen() {
   useEffect(() => {
     setCategoryId(params.categoryId ?? null);
   }, [params.categoryId]);
-
-  // Variant-pack sheet (source line 1142/2916) — only reachable from the single mock product with
-  // `selectOption` true. Real (API-backed) products never set `selectOption` (see toRailProduct in
-  // homeApi.ts), so this stays wired but unreachable now that this screen shows real products —
-  // kept as-is since VariantSheet/product/[id].tsx still use the same mock-catalog concept.
-  const [variantProductId, setVariantProductId] = useState<number | null>(null);
-  const [variantCart, setVariantCart] = useState<Record<string, number>>({});
 
   const realCategories = useProductCategories();
   const categoryName = categoryId ? (realCategories.find((c) => c.id === categoryId)?.name ?? '') : '';
@@ -92,36 +81,10 @@ export default function CategoriesScreen() {
     () => productsState.results.map((p) => toRailProduct(p, cart, loggedIn)),
     [productsState.results, cart, loggedIn]
   );
-  const variantProduct = variantProductId != null ? productById(variantProductId) ?? null : null;
-
   const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
   const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
-  const goCart = () => router.push('/cart');
   const goLogin = () => router.push('/account');
   const goHome = () => router.push('/');
-
-  const openVariant = (id: number) => setVariantProductId(id);
-  const closeVariant = () => setVariantProductId(null);
-
-  // Ported verbatim from `variantPacks`' add/inc/dec (source line 2937-2939): every tap ALSO nudges
-  // the main product's cart quantity by the pack's `mult`, independent of the small per-pack counter
-  // shown in this sheet. See VariantSheet's own comment for why that's intentional, not a bug to fix.
-  const addVariant = (pack: VariantPack) => {
-    if (!variantProduct) return;
-    addToCart(variantProduct.id, pack.mult);
-    setVariantCart((s) => ({ ...s, [pack.key]: 1 }));
-    flash(pack.label + ' added');
-  };
-  const incVariant = (pack: VariantPack) => {
-    if (!variantProduct) return;
-    addToCart(variantProduct.id, pack.mult);
-    setVariantCart((s) => ({ ...s, [pack.key]: (s[pack.key] || 0) + 1 }));
-  };
-  const decVariant = (pack: VariantPack) => {
-    if (!variantProduct) return;
-    addToCart(variantProduct.id, -pack.mult);
-    setVariantCart((s) => ({ ...s, [pack.key]: Math.max(0, (s[pack.key] || 0) - 1) }));
-  };
 
   const hasQuery = query.trim().length > 0;
   const catHeading = hasQuery ? `“${query}”` : categoryName || 'All products';
@@ -232,9 +195,11 @@ export default function CategoriesScreen() {
           </ScrollView>
         )}
 
-        {productsState.loading && <Text style={styles.loadingText}>Loading products…</Text>}
-
-        {catEmpty ? (
+        {productsState.loading ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator color={ds.primaryInk} />
+          </View>
+        ) : catEmpty ? (
           <View style={styles.emptyState}>
             <View style={styles.emptyIcon}>
               <PackageIcon size={28} color={ds.primaryInk} />
@@ -259,7 +224,6 @@ export default function CategoriesScreen() {
                 onInc={() => incApiProduct(p)}
                 onDec={() => decApiProduct(p)}
                 onLogin={goLogin}
-                onSelectOption={() => openVariant(p.id)}
               />
             ))}
           </View>
@@ -278,17 +242,6 @@ export default function CategoriesScreen() {
         onClear={clearFilters}
         brandOptions={brandOptions}
         resultCount={productsState.count}
-      />
-
-      <VariantSheet
-        visible={variantProductId != null}
-        product={variantProduct}
-        variantCart={variantCart}
-        onClose={closeVariant}
-        onAdd={addVariant}
-        onInc={incVariant}
-        onDec={decVariant}
-        onGoCart={goCart}
       />
     </View>
   );
@@ -352,7 +305,7 @@ const styles = StyleSheet.create({
   railChipText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22 },
   railChipTextActive: { color: '#0C4733' },
   railChipTextInactive: { color: '#586360' },
-  loadingText: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
+  loadingState: { paddingTop: dsSpacing.xl + dsSpacing.lg, alignItems: 'center' },
   body: { flex: 1 },
   bodyContent: { paddingBottom: dsSpacing.xl },
   pillsRow: { flexGrow: 0 },

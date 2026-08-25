@@ -40,7 +40,7 @@ import { money } from '@/utils/money';
 import { useAppState } from '@/state/AppStateContext';
 import { StubScreen } from '@/components/shell/StubScreen';
 import { useProductDetail } from '@/data/productDetailApi';
-import { toProduct, toRailProduct } from '@/data/homeApi';
+import { toProduct, toRailProduct, toVariantProduct } from '@/data/homeApi';
 import { productHref } from '@/data/idHash';
 import { syncCartQuantity } from '@/data/cartSync';
 import { useApiCartActions } from '@/data/useApiCartActions';
@@ -125,11 +125,16 @@ export default function ProductScreen() {
   const [productTab, setProductTab] = useState<ProductTab>('Description');
   const [pincode, setPincode] = useState('');
   const [pincodeResult, setPincodeResult] = useState('');
-  const [pendingQty, setPendingQty] = useState(1);
   // Variant picker (product id 2 only) — screen-local, matching the pre-existing precedent in this
   // app (VariantSheet/Categories already keep `variantCart` screen-local, not global).
   const [variantPick, setVariantPick] = useState(0);
   const [variantQtyMap, setVariantQtyMap] = useState<Record<number, number>>({});
+  // Real multi-variant picker (e.g. Swarnaprashana's 4 age-range packs) - a genuinely different
+  // concept from the mock variantPick above (real variants have their own distinct price/stock,
+  // not a quantity multiplier on one shared price). null = no explicit pick yet, meaning "use the
+  // cheapest variant" (activeVariantProduct below falls back to that, same as every other real
+  // product's card already does).
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
 
   const similarProducts: RailProduct[] = useMemo(() => {
     if (!product) return [];
@@ -142,8 +147,21 @@ export default function ProductScreen() {
     return detail.alsoBoughtProducts.map((mp) => toRailProduct(mp, cart, loggedIn));
   }, [product, mockProduct, detail.alsoBoughtProducts, cart, loggedIn]);
   const variantPacks = useMemo(() => (product ? buildVariantPacks(product) : []), [product]);
+  // The real variant currently being shown/added - defaults to `product` itself (already the
+  // cheapest variant, toProduct's existing behavior) until the customer picks a different one
+  // from realVariants, at which point this swaps to that specific variant's own Product (price/
+  // stock/quantityTiers all its own - see toVariantProduct in homeApi.ts). Every price/cart
+  // computation below reads from this, not `product` directly, once a real multi-variant product
+  // is in play.
+  const activeVariantProduct = useMemo(() => {
+    if (!product) return undefined;
+    const hasRealVariants = isReal && (product.realVariants?.length ?? 0) > 1;
+    if (!hasRealVariants || !detail.product) return product;
+    const variantId = selectedVariantId ?? product.realVariants![0].id;
+    return toVariantProduct(detail.product, variantId);
+  }, [product, isReal, detail.product, selectedVariantId]);
 
-  if (!product) {
+  if (!product || !activeVariantProduct) {
     if (detail.loading) {
       return (
         <View style={[styles.screen, styles.loadingScreen]}>
@@ -155,17 +173,24 @@ export default function ProductScreen() {
   }
 
   const hasVariants = product.id === 2;
+  // Real multi-variant product (e.g. Swarnaprashana's 4 age-range packs) - distinct from the
+  // mock-only `hasVariants` above, which only ever applies to one specific seed product.
+  const isRealMultiVariant = isReal && (product.realVariants?.length ?? 0) > 1;
+  const active = activeVariantProduct; // the specific variant currently priced/added (see its own comment above)
   const gated = !!product.gated && !loggedIn; // never true for the current seed catalog
-  const cartQty = cart[product.id] || 0;
+  // Real per-variant availability (homeApi.ts's toProduct/toVariantProduct) - undefined (mock
+  // catalog) stays treated as in-stock, same convention as every other real-API-only field.
+  const outOfStock = active.inStock === false;
+  const cartQty = cart[active.id] || 0;
   const inCart = cartQty > 0;
-  const bulkTiers = bulkTiersFor(product);
+  const bulkTiers = bulkTiersFor(active);
   // productSpecsFor's Form/Shelf life/Licence are fixed placeholder copy for every mock product
   // (see product-detail-content.ts) - fine for the mock catalog, but presenting them as fact for
   // a real product would be inventing specs that were never actually set. Real products show
   // just what's genuinely known (Brand, Pack size) instead of those three.
   const specs = mockProduct ? productSpecsFor(product) : [
     { k: 'Brand', v: product.brand },
-    { k: 'Pack size', v: product.cs },
+    { k: 'Pack size', v: active.cs },
   ];
   const description = mockProduct
     ? productDescriptionFor(product)
@@ -214,24 +239,21 @@ export default function ProductScreen() {
 
   // Ported from the source's `productAdd` (Various Mobile App - Phone.dc.html line 3066), minus
   // the forced "minimum 2" floor - that was a fabricated MOQ rule with no real backend rule
-  // behind it, and it meant a first tap silently added 2 units instead of the 1 the qty
-  // stepper next to it was showing. Adds `pendingQty` units (now floored at 1, matching the
-  // stepper's own floor - see setPendingQty below) and resets the stepper; calls no `flash()`,
-  // unlike every other add-to-cart action in this app - preserved, not "fixed", it's the
-  // source's own quirk. Real products additionally sync the real cart.
+  // behind it. Always adds 1, same as every other Add button in this app, now that the separate
+  // mid-page Quantity stepper (which used to let this add more than 1 at once) is gone. Calls no
+  // `flash()`, unlike every other add-to-cart action in this app - preserved, not "fixed", it's
+  // the source's own quirk. Real products additionally sync the real cart.
   const productAdd = () => {
-    const qty = Math.max(pendingQty, 1);
-    addToCart(product.id, qty);
-    if (isReal) syncCartQuantity(product.id, cartQty + qty);
-    setPendingQty(1);
+    addToCart(active.id, 1);
+    if (isReal) syncCartQuantity(active.id, cartQty + 1);
   };
   const incMain = () => {
-    inc(product.id);
-    if (isReal) syncCartQuantity(product.id, cartQty + 1);
+    inc(active.id);
+    if (isReal) syncCartQuantity(active.id, cartQty + 1);
   };
   const decMain = () => {
-    dec(product.id);
-    if (isReal) syncCartQuantity(product.id, Math.max(0, cartQty - 1));
+    dec(active.id);
+    if (isReal) syncCartQuantity(active.id, Math.max(0, cartQty - 1));
   };
 
   const selectedPack = variantPacks[variantPick];
@@ -253,17 +275,17 @@ export default function ProductScreen() {
     setVariantQtyMap((m) => ({ ...m, [variantPick]: Math.max(0, (m[variantPick] || 0) - 1) }));
   };
 
-  // An MRP-vs-sale-price markdown (product.cmp) and quantity-tier pricing (product.quantityTiers,
-  // the admin's separate "Quantity Discount" widget) are two independent real discount
-  // mechanisms - a product can have real tiers with no MRP discount at all (confirmed live: this
-  // exact case), or vice versa. barUnitPrice/referenceUnitPrice/showBarSavings/barSave below are
-  // qty-aware or unified across the whole page - the top price block and the sticky add-bar both
-  // read from these now, instead of the top block using its own flat, qty-unaware product.price/
-  // product.cmp (which is what left it stuck showing "no discount" even once cart qty crossed
-  // into a real tier).
-  const barQty = inCart ? cartQty : Math.max(pendingQty, 1);
-  const barUnitPrice = hasBulkTiers(product) ? bulkUnitPrice(product, barQty) : product.price || 0;
-  const referenceUnitPrice = product.cmp || product.price || 0;
+  // An MRP-vs-sale-price markdown (cmp) and quantity-tier pricing (quantityTiers, the admin's
+  // separate "Quantity Discount" widget) are two independent real discount mechanisms - a
+  // product can have real tiers with no MRP discount at all (confirmed live: this exact case),
+  // or vice versa. barUnitPrice/referenceUnitPrice/showBarSavings/barSave below are qty-aware or
+  // unified across the whole page - the top price block and the sticky add-bar both read from
+  // `active` (the currently selected real variant, or `product` itself when there's only one),
+  // not a flat, qty-unaware price/cmp - and not `product`'s own baseline once a different real
+  // variant has been picked.
+  const barQty = inCart ? cartQty : 1;
+  const barUnitPrice = hasBulkTiers(active) ? bulkUnitPrice(active, barQty) : active.price || 0;
+  const referenceUnitPrice = active.cmp || active.price || 0;
   const productLineTotal = money(barUnitPrice * barQty);
   const productLineMrp = money(referenceUnitPrice * barQty);
   const showBarSavings = referenceUnitPrice > 0 && barUnitPrice < referenceUnitPrice;
@@ -301,13 +323,13 @@ export default function ProductScreen() {
             ))}
           </View>
         </View>
-        <View style={styles.thumbRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow} contentContainerStyle={styles.thumbRowContent}>
           {lightboxThumbs.map((i) => (
             <Pressable key={i} onPress={() => setLightboxPick(i)} style={[styles.thumb, { borderColor: lightboxPick === i ? ds.primary : 'transparent' }]}>
               {hasRealImages && <Image source={{ uri: galleryImages[i] }} style={styles.thumbImage} contentFit="contain" />}
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
         <View style={styles.infoBlock}>
           <View style={styles.infoTopRow}>
@@ -320,6 +342,11 @@ export default function ProductScreen() {
             </Pressable>
           </View>
           <Text style={styles.name}>{product.name}</Text>
+          {outOfStock && (
+            <View style={styles.outOfStockBadge}>
+              <Text style={styles.outOfStockBadgeText}>Out of stock</Text>
+            </View>
+          )}
 
           {!gated && (
             <>
@@ -381,6 +408,24 @@ export default function ProductScreen() {
               ) : (
                 <>
                   <View style={styles.divider} />
+                  {isRealMultiVariant && (
+                    <View style={styles.variantGrid}>
+                      {product.realVariants!.map((v) => {
+                        const picked = v.id === (selectedVariantId ?? product.realVariants![0].id);
+                        return (
+                          <Pressable
+                            key={v.id}
+                            onPress={() => setSelectedVariantId(v.id)}
+                            style={[styles.variantOption, { borderColor: picked ? ds.primary : ds.line, backgroundColor: picked ? ds.primarySoft : ds.surface }]}
+                          >
+                            <Text style={styles.variantOptionLabel}>{v.title}</Text>
+                            <Text style={styles.variantOptionPrice}>{money(v.price)}</Text>
+                            {v.inStock === false && <Text style={styles.variantOptionOutOfStock}>Out of stock</Text>}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
                   {showBarSavings ? (
                     <>
                       <View style={styles.priceRow}>
@@ -424,7 +469,7 @@ export default function ProductScreen() {
           )}
         </View>
 
-        {hasBulkTiers(product) && (
+        {hasBulkTiers(active) && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Bulk pricing</Text>
             <View style={styles.tiersBox}>
@@ -437,19 +482,6 @@ export default function ProductScreen() {
             </View>
           </View>
         )}
-
-        <View style={styles.minQtyRow}>
-          <Text style={styles.minQtyLabel}>Quantity</Text>
-          <View style={styles.pendingStepper}>
-            <Pressable onPress={() => setPendingQty((q) => Math.max(q - 1, 1))} style={styles.pendingStepBtn} hitSlop={4}>
-              <Text style={styles.pendingStepGlyph}>−</Text>
-            </Pressable>
-            <Text style={styles.pendingQtyText}>{pendingQty}</Text>
-            <Pressable onPress={() => setPendingQty((q) => q + 1)} style={styles.pendingStepBtn} hitSlop={4}>
-              <Text style={styles.pendingStepGlyph}>+</Text>
-            </Pressable>
-          </View>
-        </View>
 
         <View style={styles.sectionHeaderBlock}>
           <Text style={styles.sectionTitle}>Estimated delivery</Text>
@@ -677,7 +709,11 @@ export default function ProductScreen() {
             )}
           </View>
         </View>
-        {inCart ? (
+        {outOfStock ? (
+          <View style={styles.addBarOutOfStock}>
+            <Text style={styles.addBarOutOfStockText}>Out of stock</Text>
+          </View>
+        ) : inCart ? (
           <View style={styles.addBarStepper}>
             <Pressable onPress={decMain} style={styles.addBarStepBtn} hitSlop={4}>
               {cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepGlyph}>−</Text>}
@@ -731,8 +767,13 @@ const styles = StyleSheet.create({
   wishlistButton: { position: 'absolute', top: 12, right: dsSpacing.lg, width: 36, height: 36, borderRadius: dsRadii.pill, backgroundColor: ds.surface, boxShadow: '0 1px 2px rgba(12,71,51,.12)', alignItems: 'center', justifyContent: 'center' },
   dotsRow: { position: 'absolute', left: 0, right: 0, bottom: dsSpacing.md, flexDirection: 'row', justifyContent: 'center', gap: 4 },
   dot: { width: 6, height: 6, borderRadius: dsRadii.pill },
-  thumbRow: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.sm, maxWidth: 280 },
-  thumb: { flex: 1, aspectRatio: 1, borderRadius: dsRadii.input, backgroundColor: ds.canvas, borderWidth: 1.5, overflow: 'hidden' },
+  // Was a plain flex row capped at maxWidth:280 with each thumb flex:1 - fine for the 4 fake
+  // placeholder slots, but a real product with more than ~4 photos squeezed every thumbnail down
+  // to fit that fixed width, unusably small. Fixed-size thumbnails in a horizontal scroll instead
+  // - any real image count stays a normal, tappable size.
+  thumbRow: { flexGrow: 0, marginTop: dsSpacing.sm },
+  thumbRowContent: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg },
+  thumb: { width: 64, height: 64, borderRadius: dsRadii.input, backgroundColor: ds.canvas, borderWidth: 1.5, overflow: 'hidden' },
   thumbImage: { width: '100%', height: '100%' },
 
   infoBlock: { marginTop: dsSpacing.md, paddingHorizontal: dsSpacing.lg },
@@ -743,12 +784,22 @@ const styles = StyleSheet.create({
   ratingValue: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22, color: ds.ink },
   ratingCount: { ...dsType.meta },
   name: { ...dsType.h1, marginTop: 4 },
+  outOfStockBadge: {
+    alignSelf: 'flex-start',
+    marginTop: dsSpacing.sm,
+    backgroundColor: 'rgba(225,92,109,.12)',
+    borderRadius: dsRadii.chip,
+    paddingHorizontal: dsSpacing.sm,
+    paddingVertical: 4,
+  },
+  outOfStockBadgeText: { fontFamily: dsFontFamily[600], fontSize: 12, lineHeight: 16, letterSpacing: 0.22, color: ds.dangerInk },
   divider: { height: 1, backgroundColor: ds.line, marginVertical: dsSpacing.md },
 
   variantGrid: { flexDirection: 'row', gap: dsSpacing.sm, marginTop: dsSpacing.md },
   variantOption: { flex: 1, borderRadius: dsRadii.button, borderWidth: 1.5, paddingVertical: dsSpacing.md, paddingHorizontal: dsSpacing.sm, alignItems: 'center' },
   variantOptionLabel: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink, textAlign: 'center' },
   variantOptionPrice: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.primaryInk, marginTop: 4 },
+  variantOptionOutOfStock: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, color: ds.dangerInk, marginTop: 2 },
 
   priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: dsSpacing.sm, marginTop: dsSpacing.md },
   priceValue: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk },
@@ -782,12 +833,6 @@ const styles = StyleSheet.create({
   tierLabel: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20 },
   tierPrice: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20 },
 
-  minQtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: dsSpacing.md, marginTop: dsSpacing.md, paddingHorizontal: dsSpacing.lg },
-  minQtyLabel: { ...dsType.meta },
-  pendingStepper: { flexDirection: 'row', alignItems: 'center', height: 40, borderRadius: dsRadii.button, backgroundColor: ds.primarySoft },
-  pendingStepBtn: { width: 36, height: 40, alignItems: 'center', justifyContent: 'center' },
-  pendingStepGlyph: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk },
-  pendingQtyText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk, minWidth: 24, textAlign: 'center' },
 
   sectionHeaderBlock: { paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.xl },
   sectionTitle: { ...dsType.h3 },
@@ -863,6 +908,17 @@ const styles = StyleSheet.create({
   addBarMrp: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, textDecorationLine: 'line-through' },
   addBarButton: { flexShrink: 0, maxWidth: 220, height: 48, paddingHorizontal: dsSpacing.lg, borderRadius: dsRadii.button, backgroundColor: ds.primaryStrong, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: dsSpacing.sm },
   addBarButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
+  addBarOutOfStock: {
+    flexShrink: 0,
+    height: 48,
+    paddingHorizontal: dsSpacing.lg,
+    borderRadius: dsRadii.button,
+    borderWidth: 1,
+    borderColor: ds.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addBarOutOfStockText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink3 },
   addBarStepper: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', height: 48, borderRadius: dsRadii.button, backgroundColor: ds.primarySoft },
   addBarStepBtn: { width: 40, height: 48, alignItems: 'center', justifyContent: 'center' },
 

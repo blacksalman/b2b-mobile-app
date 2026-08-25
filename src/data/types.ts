@@ -21,6 +21,17 @@ export interface Product {
   // API-backed only. Independent of `cmp` (a separate MRP/sale-price concept) - a product can have
   // real tiers with no cmp discount at all, which product-detail-content.ts's bulkTiersFor/
   // bulkUnitPrice account for. length <= 1 means just the qty=1 baseline row, i.e. no real tiers.
+  inStock?: boolean; // real availability of the variant this card/page uses (homeApi.ts's toProduct)
+  // - API-backed only, undefined for the mock catalog (treated as in-stock everywhere this is
+  // read, since mock products have no real inventory concept). Same rule the backend's own
+  // /store/products-search in_stock filter uses: not inventory-tracked, or backorder allowed, or
+  // some stock location has available_quantity > 0.
+  realVariants?: { id: string; title: string; price: number; cmp?: number; inStock?: boolean }[];
+  // Every real Medusa variant this product actually has (homeApi.ts's toProduct/toVariantProduct)
+  // - API-backed only, set only when there's more than one (a single-variant product has nothing
+  // to choose between). length > 1 is what drives "Select option" instead of a plain Add button
+  // (DsProductCard) and the real variant picker on the product detail page - a genuinely
+  // different concept from `quantityTiers` above (qty-based bulk pricing WITHIN one variant).
 }
 
 export interface Category {

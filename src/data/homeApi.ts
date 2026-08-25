@@ -6,8 +6,11 @@ import {
   fetchCollections,
   fetchCollectionProductCount,
   fetchProductsByIds,
+  searchProducts,
+  storeFetch,
   type MedusaProduct,
   type MedusaBanner,
+  type MedusaVariant,
 } from '@/lib/medusaClient';
 import { decorateProduct, discountBadge, marginOf, ratingOf, reviewCountOf } from './decorateProduct';
 import { registerApiProductVariant } from './cartSync';
@@ -39,7 +42,6 @@ export interface ApiConcernShelf {
   title: string;
   blurb: string;
   tint: string;
-  ids: number[];
   rawProducts: MedusaProduct[];
 }
 
@@ -71,6 +73,11 @@ export interface HomeApiData {
   categoryTiles: ApiCategoryTile[];
   brands: ApiBrand[];
   heroBanners: MedusaBanner[];
+  // Real full-catalog totals (not scoped to the Prescription-at-a-glance tiles above) - backs the
+  // "Explore full catalogue" band's product/category counts, replacing that copy's old hardcoded
+  // "300+ products across 8 categories".
+  catalogProductCount: number;
+  catalogCategoryCount: number;
 }
 
 const EMPTY_DATA: HomeApiData = {
@@ -84,6 +91,8 @@ const EMPTY_DATA: HomeApiData = {
   categoryTiles: [],
   brands: [],
   heroBanners: [],
+  catalogProductCount: 0,
+  catalogCategoryCount: 0,
 };
 
 const CONCERN_TINTS = ['#DCF5E9', '#FCF1E0', '#EAEFF7', '#F7EBED'];
@@ -108,11 +117,15 @@ export function useHomeApiData(): HomeApiData {
 
     async function load() {
       try {
-        const [sectionsRes, categorySectionsRes, bannersRes, collectionsRes] = await Promise.all([
+        const [sectionsRes, categorySectionsRes, bannersRes, collectionsRes, catalogProducts, catalogCategories] = await Promise.all([
           fetchProductSections(),
           fetchCategorySections(),
           fetchBanners('home'),
           fetchCollections(),
+          // limit:1 - only `count` is read from either, same cheap-count trick
+          // fetchCollectionProductCount already uses for a brand's product total.
+          searchProducts({ limit: 1 }),
+          storeFetch<{ count: number }>('/store/product-categories', { limit: '1', parent_category_id: 'null' }),
         ]);
 
         const sections = sectionsRes.product_sections.filter((s) => !EXCLUDED_SLUGS.has(s.slug));
@@ -174,12 +187,13 @@ export function useHomeApiData(): HomeApiData {
             title: s.title,
             blurb: 'Curated products for this shelf',
             tint: CONCERN_TINTS[i % CONCERN_TINTS.length],
-            ids: resolve(s.products).map((p) => hashProductId(p.id)),
             rawProducts: resolve(s.products),
           })),
           categoryTiles,
           brands,
           heroBanners: bannersRes.banners,
+          catalogProductCount: catalogProducts.count,
+          catalogCategoryCount: catalogCategories.count,
         });
       } catch {
         if (!cancelled) setData((prev) => ({ ...prev, loading: false, error: true }));
@@ -203,18 +217,45 @@ function cheapestVariant(mp: MedusaProduct) {
   );
 }
 
-// Adapts a real Medusa product into the app's Product shape, registering it (productRegistry +
-// cartSync's variant map) as a side effect - every real product that flows through this becomes
-// resolvable later by its hashed id, which is what lets product/[id].tsx open a real product
-// detail page from a card tap (see useProductDetail in productDetailApi.ts) and what lets
-// cartTotals.ts price a real product in the cart/mini-cart. Shared by toRailProduct below and
-// productDetailApi.ts's main-product fetch - anywhere a real MedusaProduct needs to become a
-// Product.
-export function toProduct(mp: MedusaProduct): Product {
-  const variant = cheapestVariant(mp);
+// Mirrors the backend's own isVariantInStock (src/api/store/products-search/route.ts) exactly,
+// so a product's stock state agrees with what the real in_stock search filter would say: not
+// inventory-tracked, or backorder allowed, or some stock location has available_quantity > 0.
+function isVariantInStock(variant?: MedusaVariant): boolean {
+  if (!variant) return true;
+  if (!variant.manage_inventory) return true;
+  if (variant.allow_backorder) return true;
+  return (variant.inventory_items ?? []).some((item) =>
+    (item.inventory?.location_levels ?? []).some((level) => (level.available_quantity ?? 0) > 0)
+  );
+}
+
+// Every real variant this product has, for the "Select option" picker (DsProductCard) and the
+// product detail page's real variant grid - only meaningful (and only ever read) when there's
+// more than one, see Product.realVariants's own comment in types.ts.
+function buildRealVariantOptions(mp: MedusaProduct): NonNullable<Product['realVariants']> {
+  return (mp.variants ?? []).map((v) => {
+    const price = v.calculated_price?.calculated_amount ?? 0;
+    const original = v.calculated_price?.original_amount ?? price;
+    return {
+      id: v.id,
+      title: v.title,
+      price,
+      cmp: original > price ? original : undefined,
+      inStock: isVariantInStock(v),
+    };
+  });
+}
+
+// Shared by toProduct/toVariantProduct below - builds the Product shape for one specific variant
+// of a real Medusa product, registering it (productRegistry + cartSync's variant map) as a side
+// effect. `idHashSource` is the Medusa product id for the "representative" (cheapest) variant a
+// card shows by default, or the variant's own id when a specific variant has been picked (real
+// multi-variant products - see product/[id].tsx's activeVariantProduct) - each becomes its own
+// addressable cart line/hashed id, exactly like a single-variant product already is.
+function buildProductForVariant(mp: MedusaProduct, variant: MedusaVariant | undefined, idHashSource: string): Product {
   const price = variant?.calculated_price?.calculated_amount ?? 0;
   const original = variant?.calculated_price?.original_amount ?? price;
-  const id = hashProductId(mp.id);
+  const id = hashProductId(idHashSource);
 
   if (variant) registerApiProductVariant(id, variant.id);
 
@@ -241,9 +282,34 @@ export function toProduct(mp: MedusaProduct): Product {
     medusaId: mp.id,
     handle: mp.handle,
     quantityTiers,
+    inStock: isVariantInStock(variant),
   };
   registerProduct(product);
   return product;
+}
+
+// Adapts a real Medusa product into the app's Product shape - the "representative" card/detail
+// view, defaulting to the cheapest variant (unchanged behavior) with every real variant also
+// attached (realVariants) so callers can offer a picker when there's more than one. Shared by
+// toRailProduct below and productDetailApi.ts's main-product fetch - anywhere a real
+// MedusaProduct needs to become a Product.
+export function toProduct(mp: MedusaProduct): Product {
+  const variant = cheapestVariant(mp);
+  const product = buildProductForVariant(mp, variant, mp.id);
+  if ((mp.variants?.length ?? 0) > 1) {
+    product.realVariants = buildRealVariantOptions(mp);
+    registerProduct(product);
+  }
+  return product;
+}
+
+// Builds the Product for one SPECIFIC real variant of mp (e.g. the age-range pack a customer
+// picked on the product detail page) - same shape/registration as toProduct, but hashed off the
+// variant's own id instead of the product's, so each variant becomes its own independent cart
+// line with its own real price, exactly as if it were a separate single-variant product.
+export function toVariantProduct(mp: MedusaProduct, variantId: string): Product {
+  const variant = mp.variants?.find((v) => v.id === variantId);
+  return buildProductForVariant(mp, variant, variantId);
 }
 
 // Real quantity-tier discounts (product.quantityTiers) only apply once the cart quantity

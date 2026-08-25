@@ -13,11 +13,17 @@ import {
   doctorTalks,
   promoBanners,
 } from '@/data/home-content';
-import { productIdsByCategory } from '@/data/products';
 import { useHomeApiData, toRailProduct, type ApiCategoryTile, type ApiBrand } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { useBuyAgainProducts } from '@/data/ordersApi';
 import { productHref } from '@/data/idHash';
+
+// Thousands-separator formatting for the real catalog product/category counts - plain regex
+// rather than toLocaleString, since Intl number formatting isn't guaranteed available on every
+// Hermes/RN runtime this app might run on.
+function formatCount(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isHome
 // block, line 40-452). Every section below is in the source's exact order; sections whose content
@@ -78,26 +84,16 @@ export default function HomeScreen() {
   // always opening to "All products" regardless of which tile was tapped.
   const openCategory = (categoryId: string) => router.push({ pathname: '/categories', params: { categoryId } });
 
-  const openListing = (ids: number[], title: string, tagline: string, tint: string) => {
-    router.push({ pathname: '/listing', params: { ids: ids.join(','), title, tagline, tint } });
-  };
-  const openListingByCategory = (catName: string, title: string, tagline: string, tint: string) =>
-    openListing(productIdsByCategory(catName), title, tagline, tint);
-  // Brand cards get their own real path through Listing (collectionId param) instead of the
-  // ids-based one above - a brand can have 40-160+ products, way past what's reasonable to pass
-  // as a comma-joined id list in a URL, and unlike the mock ids/getListingProducts path this one
-  // is real-data (see listing.tsx's collectionId branch).
+  // Brand cards get their own real path through Listing (collectionId param) - a brand can have
+  // 40-160+ products, way past what's reasonable to pass as a comma-joined id list in a URL, and
+  // this is real-data (see listing.tsx's collectionId branch). Every other rail's "View all"
+  // (Best sellers/New arrivals/Featured/Concern shelves) used to route through an ids-based
+  // Listing path too, but those ids are this app's internal hashed real-product ids, which
+  // Listing's `ids` param only ever resolved against the old MOCK catalog - so it opened an
+  // empty/garbage listing. Simplified to just open Categories' "All" view instead, same as
+  // "Explore full catalogue" already does.
   const openBrandListing = (b: ApiBrand) => {
     router.push({ pathname: '/listing', params: { collectionId: b.id, title: b.name, tagline: `${b.skus} products`, tint: b.tint } });
-  };
-
-  const handlePromoBanner = (b: (typeof promoBanners)[number]) => {
-    if ('targetListing' in b && b.targetListing) {
-      const t = b.targetListing;
-      return openListingByCategory(t.cat, t.title, t.tagline, t.tint);
-    }
-    if ('targetScreen' in b && b.targetScreen === 'categories') return router.push('/categories');
-    if ('targetScreen' in b && b.targetScreen === 'stores') return router.push('/stores');
   };
 
   return (
@@ -214,11 +210,15 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* Explore full catalogue CTA */}
+        {/* Explore full catalogue CTA - real counts (GET /store/products-search and
+            /store/product-categories, both limit:1 just to read `count`), replacing the old
+            hardcoded "300+ products across 8 categories". */}
         <Pressable onPress={goCategories} style={styles.catalogueBand}>
           <View style={styles.catalogueText}>
             <Text style={styles.catalogueTitle}>Explore full catalogue</Text>
-            <Text style={styles.catalogueSub}>300+ products across 8 categories</Text>
+            <Text style={styles.catalogueSub}>
+              {formatCount(apiData.catalogProductCount)} products across {apiData.catalogCategoryCount} categories
+            </Text>
           </View>
           <ChevronRightIcon size={18} color={ds.surface} strokeWidth={2} />
         </Pressable>
@@ -298,7 +298,7 @@ export default function HomeScreen() {
               title="Best sellers"
               subtitle="Top-moving cases across every outlet"
               actionLabel="View all"
-              onAction={() => openListing(bestSellers.map((p) => p.id), 'Best sellers', 'Top-moving cases across every outlet', ds.primarySoft)}
+              onAction={goCategories}
             />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
               {bestSellers.map((p) => (
@@ -325,7 +325,7 @@ export default function HomeScreen() {
               title="New arrivals"
               subtitle="Added to the trade catalogue this week"
               actionLabel="View all"
-              onAction={() => openListing(newArrivals.map((p) => p.id), 'New arrivals', 'Added to the trade catalogue this week', ds.primarySoft)}
+              onAction={goCategories}
             />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
               {newArrivals.map((p) => (
@@ -344,14 +344,15 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* Promo banner carousel */}
+        {/* Promo banner carousel - read-only display cards, not links to anything (previously
+            navigated to a Listing/Categories/Stores screen; removed per instruction). */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.promoRail}>
           {promoBanners.map((pb) => (
-            <Pressable key={pb.title} onPress={() => handlePromoBanner(pb)} style={[styles.promoCard, { backgroundColor: pb.tint }]}>
+            <View key={pb.title} style={[styles.promoCard, { backgroundColor: pb.tint }]}>
               <Text style={styles.promoEyebrow}>{pb.eyebrow}</Text>
               <Text style={styles.promoTitle}>{pb.title}</Text>
               <Text style={styles.promoSub}>{pb.sub}</Text>
-            </Pressable>
+            </View>
           ))}
         </ScrollView>
 
@@ -362,7 +363,7 @@ export default function HomeScreen() {
               title="Featured products"
               subtitle="Hand-picked by your account manager."
               actionLabel="View all"
-              onAction={() => openListing(featured.map((p) => p.id), 'Featured products', 'Hand-picked by your account manager', ds.primarySoft)}
+              onAction={goCategories}
             />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
               {featured.map((p) => (
@@ -386,7 +387,7 @@ export default function HomeScreen() {
         {concerns.map((c) => (
           <View key={c.slug}>
             <Pressable
-              onPress={() => openListing(c.ids, c.title, c.blurb, c.tint)}
+              onPress={goCategories}
               style={[styles.concernBanner, { backgroundColor: c.tint }]}
             >
               <View style={styles.concernIcon}>

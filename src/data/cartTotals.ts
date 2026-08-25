@@ -24,6 +24,9 @@ export interface CartLine {
   hasOffer: boolean;
   noOffer: boolean;
   discount: string;
+  thumbnail?: string | null; // real product photo (Cart page's cart.tsx, from the real Medusa
+  // cart) - optional so the mock-catalog/mini-cart path (MiniCartSheet, still locally computed
+  // here) keeps rendering its plain tint placeholder exactly as before, unchanged.
 }
 
 export interface CartTotals {

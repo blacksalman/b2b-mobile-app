@@ -63,15 +63,31 @@ export async function resetCartAfterOrder(): Promise<void> {
   cartIdPromise = null;
   lineItemIdByHashId.clear();
   variantIdByHashId.clear();
+  syncChainByHashId.clear();
 }
+
+// Per-hashId queue - serializes concurrent syncCartQuantity calls for the SAME product so a
+// rapid double-tap can't run two overlapping syncs at once (see syncCartQuantity's own comment
+// for the exact bug this fixes). Calls for different products still run independently/in
+// parallel, only same-product calls chain behind each other.
+const syncChainByHashId = new Map<number, Promise<void>>();
 
 // Fire-and-forget: the caller has already updated local cart state optimistically (same as
 // every other add/inc/dec in this app today), so a sync failure here is logged, not surfaced -
 // mirrors the backend's own "notify, don't block" convention for non-critical side effects.
-export async function syncCartQuantity(hashId: number, quantity: number): Promise<void> {
+export function syncCartQuantity(hashId: number, quantity: number): Promise<void> {
+  const previous = syncChainByHashId.get(hashId) ?? Promise.resolve();
+  // .catch(() => {}) so one failed sync doesn't permanently wedge this product's queue - the
+  // next call still gets its own fresh attempt instead of inheriting a rejected chain forever.
+  const next = previous.catch(() => {}).then(() => syncCartQuantityOnce(hashId, quantity));
+  syncChainByHashId.set(hashId, next);
+  return next;
+}
+
+async function syncCartQuantityOnce(hashId: number, quantity: number): Promise<void> {
   try {
     const cartId = await ensureCartId();
-    const existingLineItemId = lineItemIdByHashId.get(hashId);
+    let existingLineItemId = lineItemIdByHashId.get(hashId);
 
     if (!existingLineItemId) {
       if (quantity <= 0) return;
@@ -80,10 +96,26 @@ export async function syncCartQuantity(hashId: number, quantity: number): Promis
         console.warn(`[cartSync] no variant registered for product ${hashId}, skipping sync`);
         return;
       }
-      const cart = await addLineItem(cartId, variantId, quantity);
-      const item = cart.items.find((i) => i.variant_id === variantId);
-      if (item) lineItemIdByHashId.set(hashId, item.id);
-      return;
+      // Don't assume "no cached line item id" means "no real line yet" - the queue above rules
+      // out a same-product race, but the cache can still be cold for other reasons (a fresh app
+      // restart before hydrateCartState finishes, a variant registered moments ago by a
+      // still-settling earlier call). Re-check the real cart first: Medusa's add-line-item
+      // endpoint is additive (confirmed live - adding qty 3 to an existing qty 1 line makes it
+      // 4, not 3, it does NOT set the line to 3), so blindly calling it when a real line already
+      // exists silently inflates the cart past what the quantity here (an absolute desired
+      // total) says it should be - that drift is exactly what left Cart's real quantity higher
+      // than what the tapped-from screen showed.
+      const currentCart = await fetchCart(cartId);
+      const existingRemote = currentCart.items.find((i) => i.variant_id === variantId);
+      if (existingRemote) {
+        lineItemIdByHashId.set(hashId, existingRemote.id);
+        existingLineItemId = existingRemote.id;
+      } else {
+        const cart = await addLineItem(cartId, variantId, quantity);
+        const item = cart.items.find((i) => i.variant_id === variantId);
+        if (item) lineItemIdByHashId.set(hashId, item.id);
+        return;
+      }
     }
 
     if (quantity <= 0) {

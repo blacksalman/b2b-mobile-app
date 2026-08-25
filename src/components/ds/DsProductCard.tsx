@@ -6,16 +6,19 @@ import type { RailProduct } from '@/data/home-content';
 import { CartIcon, TrashIcon } from '@/icons';
 
 interface DsProductCardProps {
-  product: RailProduct & { hasOffer?: boolean; noOffer?: boolean; selectOption?: boolean };
+  product: RailProduct & { hasOffer?: boolean; noOffer?: boolean };
   width?: number | `${number}%`; // fixed width for rail cards; '48%' for a 2-col grid; omitted = flex:1
   onOpen: () => void;
   onAdd: () => void;
   onInc: () => void;
   onDec: () => void;
   onLogin: () => void;
-  // Categories screen only (source line 2951/98-100): exactly one product (id 2, Ashwagandha
-  // Capsules) shows an outlined "Select option" button instead of the normal stepper/Add, opening the
-  // variant-pack sheet. Omitted on every other screen's cards, where `product.selectOption` is never set.
+  // A real product with more than one Medusa variant (product.realVariants, homeApi.ts) shows an
+  // outlined "Select option" button instead of the normal stepper/Add - there's no single "the"
+  // price/variant to add until the customer picks one. Defaults to `onOpen` when omitted (every
+  // call site that doesn't explicitly want different behavior) - the product detail page is
+  // where the actual real variant picker lives (see product/[id].tsx), so "select" and "view
+  // details" land on the same place.
   onSelectOption?: () => void;
 }
 
@@ -34,6 +37,11 @@ export const DsProductCard = React.memo(function DsProductCard({ product: p, wid
   // cmp unset when there's no real discount (see toRailProduct in homeApi.ts), so gate display on that
   // instead of trusting compareLabel/margin to always be meaningful.
   const hasDiscount = !p.noOffer && !!p.cmp;
+  // p.inStock is only ever explicitly false for a real out-of-stock product (homeApi.ts's
+  // toProduct) - undefined (mock catalog, no real inventory concept) stays treated as in-stock,
+  // same as everywhere else in this app that reads real-API-only fields.
+  const outOfStock = p.inStock === false;
+  const hasVariants = (p.realVariants?.length ?? 0) > 1;
 
   return (
     <View style={[styles.card, width ? { width } : styles.flexCard]}>
@@ -42,12 +50,13 @@ export const DsProductCard = React.memo(function DsProductCard({ product: p, wid
           // contain, not cover: a cropped product photo (bottle top/label cut off) reads as
           // broken - showing the whole product on its tinted background matches every other
           // real e-commerce listing and is what "contain" is for.
-          <Image source={{ uri: p.thumbnail }} style={styles.image} contentFit="contain" />
+          <Image source={{ uri: p.thumbnail }} style={[styles.image, outOfStock && styles.imageOutOfStock]} contentFit="contain" />
         ) : null}
         {/* p.margin was a fabricated per-product placeholder %, unrelated to the real discount
             - replaced with the actual discount (p.discount, e.g. "-5%"), same value/format the
             old ProductCard.tsx's discount chip already used elsewhere in this app. */}
-        {hasDiscount && <Text style={styles.discountChip}>{p.discount}</Text>}
+        {hasDiscount && !outOfStock && <Text style={styles.discountChip}>{p.discount}</Text>}
+        {outOfStock && <Text style={styles.outOfStockChip}>Out of stock</Text>}
       </Pressable>
       <View style={styles.body}>
         <Pressable onPress={onOpen}>
@@ -65,8 +74,12 @@ export const DsProductCard = React.memo(function DsProductCard({ product: p, wid
               <Text style={styles.price}>{p.priceLabel}</Text>
               {hasDiscount && <Text style={styles.compare}>{p.compareLabel}</Text>}
             </View>
-            {p.selectOption ? (
-              <Pressable onPress={onSelectOption} style={styles.selectOptionButton}>
+            {outOfStock ? (
+              <View style={styles.outOfStockButton}>
+                <Text style={styles.outOfStockButtonText}>Out of stock</Text>
+              </View>
+            ) : hasVariants ? (
+              <Pressable onPress={onSelectOption ?? onOpen} style={styles.selectOptionButton}>
                 <Text style={styles.selectOptionText}>Select option</Text>
               </Pressable>
             ) : p.inCart ? (
@@ -115,6 +128,22 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  imageOutOfStock: { opacity: 0.45 },
+  outOfStockChip: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    fontFamily: dsFontFamily[600],
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.22,
+    backgroundColor: ds.surface,
+    color: ds.dangerInk,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: dsRadii.chip,
+    overflow: 'hidden',
   },
   discountChip: {
     position: 'absolute',
@@ -166,6 +195,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   addButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
+  outOfStockButton: {
+    marginTop: 12,
+    height: 40,
+    borderRadius: dsRadii.button,
+    backgroundColor: ds.canvas,
+    borderWidth: 1,
+    borderColor: ds.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  outOfStockButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink3 },
   selectOptionButton: {
     marginTop: 12,
     height: 40,

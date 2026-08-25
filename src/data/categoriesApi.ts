@@ -134,10 +134,15 @@ export function useCategoryProducts(
 
     const trimmed = query.trim();
     const myRequestId = ++requestId.current;
-    // Clears results/count immediately, not just a spread-over-prev - otherwise switching
+    // Clears `results` immediately (not just a spread-over-prev) - otherwise switching
     // category/collection (e.g. Listing's brand cards) kept showing the PREVIOUS selection's
-    // products/count for the whole fetch, which read as "wrong brand" rather than "loading".
-    setState({ loading: true, error: false, results: [], count: 0 });
+    // products for the whole fetch, which read as "wrong brand" rather than "loading". `count`
+    // deliberately keeps its previous value here rather than also resetting to 0 - it only feeds
+    // the filter sheet's result number, which otherwise flashed to 0 on every fetch before
+    // settling on the real count; screens showing an item count of their own gate that on
+    // `loading` directly instead of trusting this value while a fetch is in flight (see
+    // listing.tsx).
+    setState((prev) => ({ loading: true, error: false, results: [], count: prev.count }));
 
     const priceRange = PRICE_RANGES[price];
 
