@@ -39,6 +39,10 @@ export default function EditProfileScreen() {
   const goAccount = () => router.push('/account');
   const saveProfile = async () => {
     if (saving) return;
+    if (!editName.trim()) {
+      flash('Enter your full name');
+      return;
+    }
     // Same 10-digit Indian mobile pattern auth/phone.tsx enforces before ever sending an OTP -
     // a real Indian mobile number is exactly 10 digits starting 6-9 (landline/other prefixes
     // aren't valid OTP-auth numbers on this backend either).

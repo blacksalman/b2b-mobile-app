@@ -147,13 +147,32 @@ export default function AddressesScreen() {
 
   const setField = <K extends keyof DraftFields>(key: K, value: string) => setDraft((d) => ({ ...d, [key]: value }));
   const onDraftPhone = (v: string) => setField('phone', v.replace(/\D/g, '').slice(0, 10));
+  // Same digits-only-as-you-type treatment as the phone field - a real Indian pincode is exactly
+  // 6 digits, never letters.
+  const onDraftPincode = (v: string) => setField('pincode', v.replace(/\D/g, '').slice(0, 6));
 
   const saveAddress = async () => {
     if (saving) return;
+    if (!draft.name.trim()) {
+      setFormError('Enter the receiver name');
+      return;
+    }
     // Same real Indian-mobile pattern edit-profile.tsx enforces - a delivery contact number
     // needs to actually be reachable, not just present.
     if (!/^[6-9]\d{9}$/.test(draft.phone)) {
       setFormError('Enter a valid 10-digit mobile number');
+      return;
+    }
+    if (!/^\d{6}$/.test(draft.pincode)) {
+      setFormError('Enter a valid 6-digit pincode');
+      return;
+    }
+    if (!draft.city.trim()) {
+      setFormError('Enter the city');
+      return;
+    }
+    if (!draft.state.trim()) {
+      setFormError('Enter the state');
       return;
     }
     setFormError('');
@@ -312,7 +331,7 @@ export default function AddressesScreen() {
 
             <View style={styles.fieldRow}>
               <Field label="Landmark" value={draft.landmark} onChangeText={(v) => setField('landmark', v)} placeholder="Enter landmark" style={styles.fieldHalf} />
-              <Field label="Pincode" value={draft.pincode} onChangeText={(v) => setField('pincode', v)} placeholder="Enter pincode" style={styles.fieldHalf} keyboardType="number-pad" />
+              <Field label="Pincode" value={draft.pincode} onChangeText={onDraftPincode} placeholder="6-digit pincode" style={styles.fieldHalf} keyboardType="number-pad" />
             </View>
             <View style={styles.fieldRow}>
               <Field label="City" value={draft.city} onChangeText={(v) => setField('city', v)} placeholder="Enter city" style={styles.fieldHalf} muted />
