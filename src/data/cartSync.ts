@@ -48,6 +48,20 @@ export function registerApiProductVariant(hashId: number, variantId: string): vo
   variantIdByHashId.set(hashId, variantId);
 }
 
+// Called by Cart's own +/-/remove (cartApi.ts's updateQuantity) right after a successful real
+// mutation - that call site writes to the real cart directly (its own line-item id, not a
+// hashId/variantId lookup) and never went through this module at all, so this cache had no way
+// to know a line it removed was gone. The next Add/Inc tap for that SAME product from Home/
+// Product Detail would then find this stale (already-deleted) id still cached and try to update
+// it - confirmed live via ngrok trace: a 404 on POST .../line-items/<dead-id>, silently caught
+// and logged by syncCartQuantityOnce below, so the tap's local optimistic "added" UI never
+// actually reached the real cart. `lineItemId: null` clears the entry (a real remove); a string
+// value re-seeds it (a real quantity update) so cache and server agree either way.
+export function setLineItemCache(hashId: number, lineItemId: string | null): void {
+  if (lineItemId) lineItemIdByHashId.set(hashId, lineItemId);
+  else lineItemIdByHashId.delete(hashId);
+}
+
 // Exposed for Checkout - it needs the same real cart id every other add/inc/dec on this device
 // already resolves to, to run the shipping/payment/complete sequence against it.
 export function getCartId(): Promise<string> {
@@ -63,79 +77,100 @@ export async function resetCartAfterOrder(): Promise<void> {
   cartIdPromise = null;
   lineItemIdByHashId.clear();
   variantIdByHashId.clear();
-  syncChainByHashId.clear();
+  cartMutationChain = Promise.resolve();
 }
 
-// Per-hashId queue - serializes concurrent syncCartQuantity calls for the SAME product so a
-// rapid double-tap can't run two overlapping syncs at once (see syncCartQuantity's own comment
-// for the exact bug this fixes). Calls for different products still run independently/in
-// parallel, only same-product calls chain behind each other.
-const syncChainByHashId = new Map<number, Promise<void>>();
+// SINGLE global queue for every real-cart-mutating call in the app - not per-product. Confirmed
+// live (direct backend test) that Medusa's cart line-item write is NOT safe under concurrent
+// requests to the same cart: firing 6 concurrent add-line-item calls at one cart (different
+// variants each) silently lost more than half of them (3 of 6 persisted); running the exact same
+// 6 calls strictly one-at-a-time persisted all 6, every time. A per-hashId queue (the previous
+// version of this file) only serializes same-PRODUCT calls against each other - two different
+// products still raced against each other and could still lose one. Every add/inc/dec
+// (syncCartQuantity below) AND Cart's own +/-/remove (cartApi.ts's updateQuantity, routed
+// through runCartMutation) now share this one chain, so no two writes to the real cart - from
+// anywhere in the app - ever run concurrently.
+let cartMutationChain: Promise<void> = Promise.resolve();
+
+// Queues `fn` behind every cart mutation already in flight (from anywhere in the app) and returns
+// its own result/rejection to the caller - the shared chain itself never rejects (a failed
+// mutation doesn't wedge the next caller's turn), but the caller still sees the real outcome.
+export function runCartMutation<T>(fn: () => Promise<T>): Promise<T> {
+  const result = cartMutationChain.then(fn);
+  cartMutationChain = result.then(
+    () => undefined,
+    () => undefined
+  );
+  return result;
+}
 
 // Fire-and-forget: the caller has already updated local cart state optimistically (same as
 // every other add/inc/dec in this app today), so a sync failure here is logged, not surfaced -
 // mirrors the backend's own "notify, don't block" convention for non-critical side effects.
 export function syncCartQuantity(hashId: number, quantity: number): Promise<void> {
-  const previous = syncChainByHashId.get(hashId) ?? Promise.resolve();
-  // .catch(() => {}) so one failed sync doesn't permanently wedge this product's queue - the
-  // next call still gets its own fresh attempt instead of inheriting a rejected chain forever.
-  const next = previous.catch(() => {}).then(() => syncCartQuantityOnce(hashId, quantity));
-  syncChainByHashId.set(hashId, next);
-  return next;
+  return runCartMutation(() => syncCartQuantityOnce(hashId, quantity));
 }
 
 // Cart's own reload() (cartApi.ts) fetches the real cart independently of whatever add/inc/dec
-// sync is still in flight from wherever the user just tapped Add - since syncCartQuantity is
+// mutation is still in flight from wherever the user just tapped Add - since syncCartQuantity is
 // intentionally fire-and-forget (the caller's local optimistic state is already updated, it
 // doesn't wait around), navigating to Cart fast enough can fetch the server cart BEFORE that add
 // has actually landed, showing "No cases yet" for an item that really is about to be there.
-// Awaiting every currently in-flight chain here (right before Cart's own fetch) closes that race
-// without turning every add/inc/dec elsewhere in the app into a blocking call.
+// Awaiting the shared chain here (right before Cart's own fetch) closes that race without turning
+// every add/inc/dec elsewhere in the app into a blocking call.
 export function waitForPendingCartSyncs(): Promise<void> {
-  return Promise.all([...syncChainByHashId.values()].map((p) => p.catch(() => {}))).then(() => undefined);
+  return cartMutationChain.catch(() => {});
 }
 
 async function syncCartQuantityOnce(hashId: number, quantity: number): Promise<void> {
   try {
     const cartId = await ensureCartId();
-    let existingLineItemId = lineItemIdByHashId.get(hashId);
+    const existingLineItemId = lineItemIdByHashId.get(hashId);
 
-    if (!existingLineItemId) {
-      if (quantity <= 0) return;
-      const variantId = variantIdByHashId.get(hashId);
-      if (!variantId) {
-        console.warn(`[cartSync] no variant registered for product ${hashId}, skipping sync`);
+    if (existingLineItemId) {
+      try {
+        if (quantity <= 0) {
+          await removeLineItem(cartId, existingLineItemId);
+          lineItemIdByHashId.delete(hashId);
+        } else {
+          await updateLineItemQuantity(cartId, existingLineItemId, quantity);
+        }
         return;
-      }
-      // Don't assume "no cached line item id" means "no real line yet" - the queue above rules
-      // out a same-product race, but the cache can still be cold for other reasons (a fresh app
-      // restart before hydrateCartState finishes, a variant registered moments ago by a
-      // still-settling earlier call). Re-check the real cart first: Medusa's add-line-item
-      // endpoint is additive (confirmed live - adding qty 3 to an existing qty 1 line makes it
-      // 4, not 3, it does NOT set the line to 3), so blindly calling it when a real line already
-      // exists silently inflates the cart past what the quantity here (an absolute desired
-      // total) says it should be - that drift is exactly what left Cart's real quantity higher
-      // than what the tapped-from screen showed.
-      const currentCart = await fetchCart(cartId);
-      const existingRemote = currentCart.items.find((i) => i.variant_id === variantId);
-      if (existingRemote) {
-        lineItemIdByHashId.set(hashId, existingRemote.id);
-        existingLineItemId = existingRemote.id;
-      } else {
-        const cart = await addLineItem(cartId, variantId, quantity);
-        const item = cart.items.find((i) => i.variant_id === variantId);
-        if (item) lineItemIdByHashId.set(hashId, item.id);
-        return;
+      } catch (err) {
+        // The cached id no longer exists on the real cart (confirmed live: a 404 here, from a
+        // line removed through a path that doesn't share this cache - e.g. Cart's own remove
+        // button before setLineItemCache existed). Don't just log and give up on the write -
+        // drop the dead entry and fall through to re-resolve against the REAL cart below,
+        // instead of silently losing whatever the user just tapped.
+        console.warn('[cartSync] cached line item is stale, re-resolving against the real cart', err);
+        lineItemIdByHashId.delete(hashId);
       }
     }
 
-    if (quantity <= 0) {
-      await removeLineItem(cartId, existingLineItemId);
-      lineItemIdByHashId.delete(hashId);
+    if (quantity <= 0) return;
+    const variantId = variantIdByHashId.get(hashId);
+    if (!variantId) {
+      console.warn(`[cartSync] no variant registered for product ${hashId}, skipping sync`);
       return;
     }
-
-    await updateLineItemQuantity(cartId, existingLineItemId, quantity);
+    // Don't assume "no cached line item id" means "no real line yet" - the shared queue above
+    // rules out any concurrent write racing this one, but the cache can still be cold for other
+    // reasons (a fresh app restart before hydrateCartState finishes, a variant registered
+    // moments ago by a still-settling earlier call, or the stale-cache fallback just above).
+    // Re-check the real cart first: Medusa's add-line-item endpoint is additive (confirmed live -
+    // adding qty 3 to an existing qty 1 line makes it 4, not 3, it does NOT set the line to 3),
+    // so blindly calling it when a real line already exists silently inflates the cart past what
+    // the quantity here (an absolute desired total) says it should be.
+    const currentCart = await fetchCart(cartId);
+    const existingRemote = currentCart.items.find((i) => i.variant_id === variantId);
+    if (existingRemote) {
+      lineItemIdByHashId.set(hashId, existingRemote.id);
+      await updateLineItemQuantity(cartId, existingRemote.id, quantity);
+    } else {
+      const cart = await addLineItem(cartId, variantId, quantity);
+      const item = cart.items.find((i) => i.variant_id === variantId);
+      if (item) lineItemIdByHashId.set(hashId, item.id);
+    }
   } catch (err) {
     console.warn('[cartSync] failed to sync cart quantity', err);
   }

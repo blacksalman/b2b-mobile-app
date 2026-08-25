@@ -1,5 +1,13 @@
+// React Compiler (app.json's experiments.reactCompiler) confirmed live (via diagnostic logging,
+// [cart] render loading=X lines=Y in every render) to swallow this screen's intermediate
+// loading=true render - setLoading(true) fires and setLoading(false) fires ~500-700ms later, but
+// the component is never observed re-rendering with loading=true in between despite that being
+// ample time for a normal paint, so the spinner never appears. Opting this file out is the
+// scoped fix - the rest of the app keeps the compiler's optimization.
+'use no memo';
+
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsElevation } from '@/theme';
@@ -87,8 +95,15 @@ export default function CartScreen() {
 
       <ScrollView
         style={styles.body}
-        contentContainerStyle={[styles.bodyContent, !cartHasItems && { paddingBottom: insets.bottom + dsSpacing.xl }]}
+        contentContainerStyle={[styles.bodyContent, (loading || !cartHasItems) && { paddingBottom: insets.bottom + dsSpacing.xl }]}
       >
+        {loading && (
+          <View style={styles.loadingState}>
+            <ActivityIndicator color={ds.primaryInk} />
+            <Text style={styles.loadingText}>Loading your cart…</Text>
+          </View>
+        )}
+
         {!loading && cartEmpty && (
           <View style={styles.emptyState}>
             <View style={styles.emptyIcon} />
@@ -100,7 +115,7 @@ export default function CartScreen() {
           </View>
         )}
 
-        {lines.length > 0 && (
+        {!loading && lines.length > 0 && (
           <View style={styles.lines}>
             {lines.map((line) => (
               <CartLineCard key={line.id} line={toCartLine(line)} onInc={() => lineInc(line)} onDec={() => lineDec(line)} onRemove={() => lineRemove(line)} />
@@ -108,7 +123,7 @@ export default function CartScreen() {
           </View>
         )}
 
-        {cartHasItems && (
+        {!loading && cartHasItems && (
           <View style={styles.summaryWrap}>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryTitle}>Order summary</Text>
@@ -141,7 +156,7 @@ export default function CartScreen() {
         )}
       </ScrollView>
 
-      {cartHasItems && (
+      {!loading && cartHasItems && (
         <View style={[styles.footer, { paddingBottom: dsSpacing.md + insets.bottom }]}>
           <View style={styles.footerInfo}>
             <Text style={styles.footerCount} numberOfLines={1}>{itemCount} items</Text>
@@ -174,6 +189,8 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, minWidth: 0, fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.ink },
   body: { flex: 1 },
   bodyContent: {},
+  loadingState: { paddingTop: dsSpacing.xl + dsSpacing.lg, alignItems: 'center', gap: dsSpacing.sm },
+  loadingText: { fontFamily: dsFontFamily[400], fontSize: 13, lineHeight: 18, color: ds.ink2 },
   emptyState: { padding: dsSpacing.lg, alignItems: 'center' },
   emptyIcon: { width: 64, height: 64, borderRadius: dsRadii.sheet, backgroundColor: ds.primarySoft, marginTop: dsSpacing.xl },
   emptyTitle: { fontFamily: dsFontFamily[600], fontSize: 16, lineHeight: 22, letterSpacing: -0.16, color: ds.ink, marginTop: dsSpacing.md, textAlign: 'center' },

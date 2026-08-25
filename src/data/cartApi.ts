@@ -1,3 +1,8 @@
+// React Compiler (app.json's experiments.reactCompiler) confirmed live to swallow useRealCart's
+// intermediate loading=true state - see cart.tsx's matching directive/comment for the full
+// diagnostic evidence. Opted out here too since this hook is where `loading` is actually set.
+'use no memo';
+
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
@@ -8,7 +13,8 @@ import {
   type MedusaCartLineItem,
 } from '@/lib/medusaCart';
 import { fetchProductsByIds, type MedusaProduct, type MedusaVariant } from '@/lib/medusaClient';
-import { getCartId, waitForPendingCartSyncs } from './cartSync';
+import { getCartId, waitForPendingCartSyncs, runCartMutation, setLineItemCache } from './cartSync';
+import { hashProductId } from './idHash';
 import { money } from '@/utils/money';
 
 // Real Cart page / mini-cart data - replaces the old local computeCartTotals (cartTotals.ts),
@@ -160,6 +166,17 @@ export interface UseRealCartResult extends RealCartData {
   updateQuantity: (lineId: string, quantity: number) => Promise<void>;
 }
 
+// A `reload()`/`updateQuantity()` that resolves in a handful of milliseconds (a warm network, an
+// already-empty queue to wait on) can flip `loading` true->false before React ever paints the
+// true state, so the spinner (cart.tsx) never becomes visible even though it did toggle -
+// confirmed as the cause of "loader sometimes doesn't show" on fast reloads. Padding every
+// loading window out to at least this long guarantees it's always actually seen, not just set.
+const MIN_LOADING_MS = 300;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function useRealCart(): UseRealCartResult {
   const [cart, setCart] = useState<MedusaCart | null>(null);
   const [productsById, setProductsById] = useState<Map<string, MedusaProduct>>(new Map());
@@ -172,6 +189,7 @@ export function useRealCart(): UseRealCartResult {
 
   const reload = useCallback(async () => {
     const myRequestId = ++requestId.current;
+    const startedAt = Date.now();
     setLoading(true);
     try {
       // Let any add/inc/dec still in flight from wherever the user just tapped land first - see
@@ -187,7 +205,11 @@ export function useRealCart(): UseRealCartResult {
     } catch {
       if (myRequestId === requestId.current) setError(true);
     } finally {
-      if (myRequestId === requestId.current) setLoading(false);
+      if (myRequestId === requestId.current) {
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < MIN_LOADING_MS) await sleep(MIN_LOADING_MS - elapsed);
+        if (myRequestId === requestId.current) setLoading(false);
+      }
     }
   }, []);
 
@@ -203,8 +225,42 @@ export function useRealCart(): UseRealCartResult {
   const updateQuantity = useCallback(
     async (lineId: string, quantity: number) => {
       if (!cart) return;
-      const updated = quantity <= 0 ? await removeLineItem(cart.id, lineId) : await updateLineItemQuantity(cart.id, lineId, quantity);
-      setCart(updated);
+      // Now shows the same loading state reload() does - previously this never touched `loading`
+      // at all, so a slow removal (queued behind other cart mutations - runCartMutation,
+      // cartSync.ts - can take a few real seconds) showed no feedback whatsoever.
+      const myRequestId = ++requestId.current;
+      const startedAt = Date.now();
+      // Captured before the mutation - once a line is removed it's gone from cart.items, so this
+      // is the last point productId is available to key cartSync.ts's cache off of.
+      const productId = cart.items.find((i) => i.id === lineId)?.product_id;
+      setLoading(true);
+      try {
+        // Routed through the same shared queue as every add/inc/dec elsewhere in the app
+        // (cartSync.ts's runCartMutation) - confirmed live that concurrent writes to the same
+        // real cart can silently lose each other, and this call site previously wrote directly
+        // with no serialization at all, a second unprotected path to that exact race (e.g.
+        // tapping +/- on two different Cart lines quickly).
+        const updated = await runCartMutation(() =>
+          quantity <= 0 ? removeLineItem(cart.id, lineId) : updateLineItemQuantity(cart.id, lineId, quantity)
+        );
+        // Keep cartSync.ts's own line-item cache in sync with this write - it drives every
+        // Add/Inc/Dec from Home/Categories/Search/Listing/Product Detail for the same product,
+        // and had no way to know about a mutation made here otherwise (confirmed live: a stale
+        // cached id from a Cart-page removal caused the next Home tap for that product to 404
+        // and silently never reach the real cart - see setLineItemCache's own comment).
+        if (productId) setLineItemCache(hashProductId(productId), quantity <= 0 ? null : lineId);
+        if (myRequestId !== requestId.current) return;
+        setCart(updated);
+        setError(false);
+      } catch {
+        if (myRequestId === requestId.current) setError(true);
+      } finally {
+        if (myRequestId === requestId.current) {
+          const elapsed = Date.now() - startedAt;
+          if (elapsed < MIN_LOADING_MS) await sleep(MIN_LOADING_MS - elapsed);
+          if (myRequestId === requestId.current) setLoading(false);
+        }
+      }
     },
     [cart]
   );
