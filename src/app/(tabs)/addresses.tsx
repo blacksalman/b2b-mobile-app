@@ -6,6 +6,7 @@ import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { AddressRemoveIcon, CloseIcon, EditPencilIcon, LocationPinIcon, PlusIcon, SmallBackChevronIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import { fetchAddresses, createAddress, updateAddress, deleteAddress, type MedusaAddress, type AddressInput } from '@/lib/medusaAddresses';
+import { toE164 } from '@/lib/phoneFormat';
 
 type SheetMode = 'add' | 'edit';
 
@@ -50,6 +51,12 @@ export default function AddressesScreen() {
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftFields>(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
+  // Shown INSIDE the sheet, not via the global flash()/Toast - the Add/Edit sheet is a native
+  // Modal, which presents in its own layer above everything else including Toast (rendered in
+  // _layout.tsx, below the tab bar), so a flash() fired while this sheet is open was invisible,
+  // stuck underneath it. Same pattern checkout.tsx's payment sheet already uses for its own
+  // errors.
+  const [formError, setFormError] = useState('');
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -61,6 +68,20 @@ export default function AddressesScreen() {
 
   useEffect(reload, [reload]);
 
+  // A customer with exactly one saved address has nothing to actually choose between - it should
+  // just already be selected, not sit there offering a "Select this address" tap for a choice of
+  // one. Creating the very first address already becomes default automatically (saveAddress's own
+  // addresses.length === 0 check below) - this covers the remaining real case that leaves behind:
+  // a single address that predates that rule, or the one address left standing after deleting
+  // down from several. A real write (selectAddress, not just a cosmetic render override) so
+  // Checkout's own default-shipping lookup agrees with what this screen shows.
+  useEffect(() => {
+    if (addresses.length === 1 && !addresses[0].is_default_shipping) {
+      selectAddress(addresses[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addresses]);
+
   // Defaults to Account (its original only entry point) - Checkout's "Change" link opens this
   // screen with ?from=checkout so this returns there instead, rather than always dumping the
   // shopper back on Account mid-checkout.
@@ -70,14 +91,18 @@ export default function AddressesScreen() {
     setMode('add');
     setEditId(null);
     setDraft(EMPTY_DRAFT);
+    setFormError('');
     setSheetOpen(true);
   };
   const openEdit = (a: MedusaAddress) => {
     setMode('edit');
     setEditId(a.id);
+    setFormError('');
     setDraft({
       name: [a.first_name, a.last_name].filter(Boolean).join(' '),
-      phone: a.phone ?? '',
+      // Local 10-digit part only - same convention edit-profile.tsx uses, the stored value is
+      // always the toE164-formatted "+91XXXXXXXXXX".
+      phone: (a.phone ?? '').replace(/^\+91/, ''),
       biz: a.company ?? '',
       line: a.address_1,
       landmark: a.address_2 ?? '',
@@ -121,9 +146,17 @@ export default function AddressesScreen() {
   };
 
   const setField = <K extends keyof DraftFields>(key: K, value: string) => setDraft((d) => ({ ...d, [key]: value }));
+  const onDraftPhone = (v: string) => setField('phone', v.replace(/\D/g, '').slice(0, 10));
 
   const saveAddress = async () => {
     if (saving) return;
+    // Same real Indian-mobile pattern edit-profile.tsx enforces - a delivery contact number
+    // needs to actually be reachable, not just present.
+    if (!/^[6-9]\d{9}$/.test(draft.phone)) {
+      setFormError('Enter a valid 10-digit mobile number');
+      return;
+    }
+    setFormError('');
     setSaving(true);
     const [firstName, ...rest] = draft.name.trim().split(/\s+/).filter(Boolean);
     // A brand new first-ever address becomes the default automatically; editing an existing one
@@ -139,7 +172,7 @@ export default function AddressesScreen() {
       city: draft.city.trim(),
       province: draft.state.trim() || undefined,
       postal_code: draft.pincode.trim(),
-      phone: draft.phone.trim() || undefined,
+      phone: toE164(draft.phone),
       is_default_shipping: isDefaultShipping,
     };
     try {
@@ -152,7 +185,7 @@ export default function AddressesScreen() {
       flash(mode === 'edit' ? 'Address updated' : 'Address added');
       reload();
     } catch {
-      flash('Could not save that address');
+      setFormError('Could not save that address');
     } finally {
       setSaving(false);
     }
@@ -247,7 +280,22 @@ export default function AddressesScreen() {
           </View>
           <ScrollView style={styles.sheetBody} contentContainerStyle={styles.sheetBodyContent}>
             <Field label="Receiver Name" value={draft.name} onChangeText={(v) => setField('name', v)} placeholder="Receiver name" />
-            <Field label="Receiver Phone Number" value={draft.phone} onChangeText={(v) => setField('phone', v)} placeholder="+91 phone number" style={{ marginTop: dsSpacing.md }} />
+            <View style={{ marginTop: dsSpacing.md }}>
+              <Text style={styles.fieldLabel}>Receiver Phone Number</Text>
+              <View style={styles.phoneBox}>
+                <Text style={styles.phonePrefix}>+91</Text>
+                <View style={styles.phoneDivider} />
+                <TextInput
+                  value={draft.phone}
+                  onChangeText={onDraftPhone}
+                  placeholder="10-digit mobile number"
+                  placeholderTextColor={ds.ink3}
+                  keyboardType="number-pad"
+                  maxLength={10}
+                  style={styles.input}
+                />
+              </View>
+            </View>
             <Field label="Clinic/Pharmacy Name" value={draft.biz} onChangeText={(v) => setField('biz', v)} placeholder="Enter clinic/pharmacy name" style={{ marginTop: dsSpacing.md }} />
 
             <Text style={styles.fieldLabel}>Clinic/Pharmacy Address</Text>
@@ -272,6 +320,7 @@ export default function AddressesScreen() {
             </View>
           </ScrollView>
           <View style={styles.sheetFooter}>
+            {!!formError && <Text style={styles.formErrorText}>{formError}</Text>}
             <Pressable onPress={saveAddress} disabled={saving} style={[styles.sheetCta, saving && styles.sheetCtaDisabled]}>
               {saving ? <ActivityIndicator color={ds.surface} /> : <Text style={styles.sheetCtaText}>{sheetCta}</Text>}
             </Pressable>
@@ -424,7 +473,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: dsSpacing.md,
   },
   inputBoxMuted: { backgroundColor: ds.canvas },
-  input: { ...dsType.body, padding: 0 },
+  input: { flex: 1, ...dsType.body, padding: 0 },
+  phoneBox: {
+    marginTop: dsSpacing.sm,
+    height: 48,
+    borderRadius: dsRadii.input,
+    borderWidth: 1,
+    borderColor: ds.lineStrong,
+    backgroundColor: ds.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: dsSpacing.sm,
+    paddingHorizontal: dsSpacing.md,
+  },
+  phonePrefix: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
+  phoneDivider: { width: 1, height: 20, backgroundColor: ds.line },
   textareaBox: {
     marginTop: dsSpacing.sm,
     borderRadius: dsRadii.input,
@@ -437,6 +500,7 @@ const styles = StyleSheet.create({
   fieldRow: { flexDirection: 'row', gap: dsSpacing.md, marginTop: dsSpacing.md },
   fieldHalf: { flex: 1, minWidth: 0 },
   sheetFooter: { borderTopWidth: 1, borderTopColor: ds.line, padding: dsSpacing.md, paddingHorizontal: dsSpacing.lg },
+  formErrorText: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.dangerInk, marginBottom: dsSpacing.sm, textAlign: 'center' },
   sheetCta: { height: 48, borderRadius: dsRadii.button, backgroundColor: ds.primaryStrong, alignItems: 'center', justifyContent: 'center' },
   sheetCtaDisabled: { opacity: 0.7 },
   sheetCtaText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
