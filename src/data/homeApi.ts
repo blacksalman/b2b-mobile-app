@@ -12,12 +12,13 @@ import {
   type MedusaBanner,
   type MedusaVariant,
 } from '@/lib/medusaClient';
-import { decorateProduct, discountBadge, marginOf, ratingOf, reviewCountOf } from './decorateProduct';
+import { decorateProduct, discountBadge, marginOf } from './decorateProduct';
 import { registerApiProductVariant } from './cartSync';
 import { registerProduct } from './productRegistry';
 import { hashProductId } from './idHash';
 import { hasBulkTiers, bulkUnitPrice } from './product-detail-content';
 import { getTaxRateForProductType } from './taxRates';
+import { summaryFor, type ReviewSummaryMap } from './reviewsApi';
 import type { CartState, Product } from './types';
 import type { RailProduct } from './home-content';
 
@@ -339,12 +340,15 @@ function applyQuantityTierPricing(product: Product, qty: number): Product {
   return { ...product, price: tierPrice, cmp: product.cmp ?? baseline };
 }
 
-// rating/margin/reviewCount have no backend source yet (no store-facing
-// review aggregate, no cost data exposed to the storefront) - kept as the
-// same deterministic placeholder formulas the mock rails already use
-// (marginOf/ratingOf/reviewCountOf), just keyed off the real product's
-// hashed id instead of a mock id, so they're at least stable per product.
-export function toRailProduct(mp: MedusaProduct, cart: CartState, loggedIn: boolean): RailProduct {
+// margin has no backend source yet (no cost data exposed to the storefront) - kept as the same
+// deterministic placeholder formula the mock rails already use (marginOf), just keyed off the
+// real product's hashed id. rating/reviewCount ARE real now (apps/backend's review module,
+// reviewsApi.ts) - `reviewSummaries` is a batch lookup the caller fetches once per screen (see
+// reviewsApi.ts's useReviewSummaries) and passes in here, so this stays a plain sync function
+// callable inside a .map() instead of needing to fetch per card. Omitted/product not yet in the
+// map (still loading, or a mock-catalog product with no real id) falls back to a real "no
+// reviews yet" zero state, never a fabricated number.
+export function toRailProduct(mp: MedusaProduct, cart: CartState, loggedIn: boolean, reviewSummaries: ReviewSummaryMap = {}): RailProduct {
   const baseProduct = toProduct(mp);
   const qty = cart[baseProduct.id] || 0;
   const product = applyQuantityTierPricing(baseProduct, qty);
@@ -352,12 +356,14 @@ export function toRailProduct(mp: MedusaProduct, cart: CartState, loggedIn: bool
   // the real discount too, not just this card's own display.
   if (product !== baseProduct) registerProduct(product);
 
+  const summary = summaryFor(reviewSummaries, mp.id);
+
   return {
     ...decorateProduct(product, qty, loggedIn),
-    rating: ratingOf(product.id),
+    rating: summary.average.toFixed(1),
     margin: marginOf(product.id),
     brandUpper: product.brand.toUpperCase(),
     discount: discountBadge(product),
-    reviewCount: reviewCountOf(product.id),
+    reviewCount: summary.count,
   };
 }

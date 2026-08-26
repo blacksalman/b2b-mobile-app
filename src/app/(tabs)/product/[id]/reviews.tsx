@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CloseIcon, SmallBackChevronIcon, StarIcon } from '@/icons';
-import { reviewList, reviewsSummary } from '@/data/product-detail-content';
+import { productById } from '@/data/products';
+import { useProductDetail } from '@/data/productDetailApi';
+import { toProduct } from '@/data/homeApi';
+import { useProductReviews, submitReview as postReview } from '@/data/reviewsApi';
+import { timeAgo } from '@/utils/timeAgo';
 import { useAppState } from '@/state/AppStateContext';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, `isReviews`
@@ -13,25 +17,55 @@ import { useAppState } from '@/state/AppStateContext';
 // opened from (`goBack:()=>this.go(s.prev==='product'?'home':s.prev)`, line 2732; `goReviews` always
 // sets `prev:'product'`, line 2663) — confirmed unchanged in the new source, so tapping back on
 // Reviews still always lands on Home, never back on Product. Not a bug; replicated exactly.
+//
+// Real-data version: reviews (apps/backend's review module) are per real product, so `id` is
+// resolved the same way product/[id].tsx already does (mock numeric id vs real handle - see
+// idHash.ts) purely to get at `product.medusaId`, the id every review call below is keyed on.
 export default function ReviewsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { flash } = useAppState();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { flash, loggedIn } = useAppState();
+
+  const mockProduct = productById(Number(id));
+  const detail = useProductDetail(mockProduct ? null : id);
+  const product = mockProduct ?? (detail.product ? toProduct(detail.product) : undefined);
+  const productId = product?.medusaId ?? null;
+
+  const { reviews, average, ratingCount, breakdown, refetch } = useProductReviews(productId, 20);
 
   const [writeReviewOpen, setWriteReviewOpen] = useState(false);
   const [myRating, setMyRating] = useState(0);
   const [reviewDraft, setReviewDraft] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const goBack = () => router.push('/');
   const openWriteReview = () => {
+    if (!loggedIn) {
+      flash('Log in to write a review');
+      return;
+    }
     setMyRating(0);
     setReviewDraft('');
     setWriteReviewOpen(true);
   };
   const closeWriteReview = () => setWriteReviewOpen(false);
-  const submitReview = () => {
-    setWriteReviewOpen(false);
-    flash('Thanks — your review was submitted');
+  const submitReview = async () => {
+    if (submitting || !productId) return;
+    if (myRating < 1) {
+      flash('Please select a rating');
+      return;
+    }
+    setSubmitting(true);
+    const result = await postReview({ product_id: productId, rating: myRating, comment: reviewDraft.trim() || undefined });
+    setSubmitting(false);
+    if (result.ok) {
+      setWriteReviewOpen(false);
+      flash('Thanks — your review was submitted for moderation');
+      refetch();
+    } else {
+      flash(result.message);
+    }
   };
 
   return (
@@ -48,16 +82,16 @@ export default function ReviewsScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.summaryCard}>
           <View style={styles.summaryLeft}>
-            <Text style={styles.avg}>{reviewsSummary.avg}</Text>
+            <Text style={styles.avg}>{average.toFixed(1)}</Text>
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((n) => (
                 <StarIcon key={n} size={12} />
               ))}
             </View>
-            <Text style={styles.count}>{reviewsSummary.count} ratings</Text>
+            <Text style={styles.count}>{ratingCount} ratings</Text>
           </View>
           <View style={styles.breakdown}>
-            {reviewsSummary.breakdown.map((b) => (
+            {breakdown.map((b) => (
               <View key={b.star} style={styles.breakdownRow}>
                 <Text style={styles.breakdownStar}>{b.star}</Text>
                 <View style={styles.breakdownTrack}>
@@ -74,22 +108,22 @@ export default function ReviewsScreen() {
 
         <Text style={styles.allReviewsTitle}>All reviews</Text>
         <View style={styles.reviewList}>
-          {reviewList.map((r) => (
-            <View key={r.name} style={styles.reviewCard}>
+          {reviews.map((r) => (
+            <View key={r.id} style={styles.reviewCard}>
               <View style={styles.reviewHeader}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{r.initials}</Text>
+                  <Text style={styles.avatarText}>{r.customer_initials}</Text>
                 </View>
                 <View style={styles.reviewMeta}>
-                  <Text style={styles.reviewerName}>{r.name}</Text>
-                  <Text style={styles.reviewDate}>{r.date}</Text>
+                  <Text style={styles.reviewerName}>{r.customer_name}</Text>
+                  <Text style={styles.reviewDate}>{timeAgo(r.created_at)}</Text>
                 </View>
                 <View style={styles.starsChip}>
                   <StarIcon size={10} />
-                  <Text style={styles.starsChipText}>{r.stars}</Text>
+                  <Text style={styles.starsChipText}>{r.rating}</Text>
                 </View>
               </View>
-              <Text style={styles.reviewText}>{r.text}</Text>
+              {r.comment && <Text style={styles.reviewText}>{r.comment}</Text>}
             </View>
           ))}
         </View>
@@ -133,8 +167,8 @@ export default function ReviewsScreen() {
               />
             </ScrollView>
             <View style={styles.sheetFooter}>
-              <Pressable onPress={submitReview} style={styles.submitButton}>
-                <Text style={styles.submitButtonText}>Submit review</Text>
+              <Pressable onPress={submitReview} disabled={submitting} style={[styles.submitButton, submitting && styles.submitButtonDisabled]}>
+                {submitting ? <ActivityIndicator color={ds.surface} /> : <Text style={styles.submitButtonText}>Submit review</Text>}
               </Pressable>
             </View>
           </View>
@@ -216,5 +250,6 @@ const styles = StyleSheet.create({
   },
   sheetFooter: { flexShrink: 0, borderTopWidth: 1, borderTopColor: ds.line, padding: dsSpacing.md, paddingHorizontal: dsSpacing.lg },
   submitButton: { height: 48, borderRadius: dsRadii.button, backgroundColor: ds.primaryStrong, alignItems: 'center', justifyContent: 'center' },
+  submitButtonDisabled: { opacity: 0.6 },
   submitButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
 });

@@ -45,6 +45,8 @@ import { productHref } from '@/data/idHash';
 import { syncCartQuantity } from '@/data/cartSync';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { fetchDeliveryEstimate } from '@/lib/medusaClient';
+import { useReviewSummaries, useProductReviews, summaryFor } from '@/data/reviewsApi';
+import { timeAgo } from '@/utils/timeAgo';
 import type { Product } from '@/data/types';
 import type { RailProduct } from '@/data/home-content';
 
@@ -148,16 +150,33 @@ export default function ProductScreen() {
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [variantSheetProduct, setVariantSheetProduct] = useState<Product | null>(null);
 
+  // Real rating/review-count aggregate (apps/backend's review module, reviewsApi.ts) for this
+  // product plus its similar/also-bought rails, fetched as one batch. isReal's own product.medusaId
+  // is undefined below on the very first render (product resolves before isReal is computed further
+  // down) - reading it straight off `product` here instead avoids ordering this hook after isReal.
+  const reviewProductIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (product?.medusaId) ids.add(product.medusaId);
+    detail.similarProducts.forEach((mp) => ids.add(mp.id));
+    detail.alsoBoughtProducts.forEach((mp) => ids.add(mp.id));
+    return Array.from(ids);
+  }, [product?.medusaId, detail.similarProducts, detail.alsoBoughtProducts]);
+  const reviewSummaries = useReviewSummaries(reviewProductIds);
+  const mainReviewSummary = summaryFor(reviewSummaries, product?.medusaId);
+  // Top-2 preview shown in the Reviews tab below (the full list lives on the dedicated Reviews
+  // screen, product/[id]/reviews.tsx, which reuses this same hook with a higher limit).
+  const productReviews = useProductReviews(product?.medusaId ?? null, 2);
+
   const similarProducts: RailProduct[] = useMemo(() => {
     if (!product) return [];
     if (mockProduct) return getSimilarProducts(product, cart, loggedIn);
-    return detail.similarProducts.map((mp) => toRailProduct(mp, cart, loggedIn));
-  }, [product, mockProduct, detail.similarProducts, cart, loggedIn]);
+    return detail.similarProducts.map((mp) => toRailProduct(mp, cart, loggedIn, reviewSummaries));
+  }, [product, mockProduct, detail.similarProducts, cart, loggedIn, reviewSummaries]);
   const alsoBought: RailProduct[] = useMemo(() => {
     if (!product) return [];
     if (mockProduct) return getAlsoBought(product, cart, loggedIn);
-    return detail.alsoBoughtProducts.map((mp) => toRailProduct(mp, cart, loggedIn));
-  }, [product, mockProduct, detail.alsoBoughtProducts, cart, loggedIn]);
+    return detail.alsoBoughtProducts.map((mp) => toRailProduct(mp, cart, loggedIn, reviewSummaries));
+  }, [product, mockProduct, detail.alsoBoughtProducts, cart, loggedIn, reviewSummaries]);
   const variantPacks = useMemo(() => (product ? buildVariantPacks(product) : []), [product]);
   // The real variant currently being shown/added - defaults to `product` itself (already the
   // cheapest variant, toProduct's existing behavior) until the customer picks a different one
@@ -353,8 +372,8 @@ export default function ProductScreen() {
             <Text style={styles.brand} numberOfLines={1}>{product.brand}</Text>
             <Pressable onPress={goReviews} style={styles.ratingPill} hitSlop={4}>
               <Text style={styles.ratingStar}>★</Text>
-              <Text style={styles.ratingValue}>4.6</Text>
-              <Text style={styles.ratingCount}>(128 reviews)</Text>
+              <Text style={styles.ratingValue}>{mainReviewSummary.average.toFixed(1)}</Text>
+              <Text style={styles.ratingCount}>({mainReviewSummary.count} reviews)</Text>
               <ChevronRightIcon size={12} color={ds.ink2} strokeWidth={2.2} />
             </Pressable>
           </View>
@@ -570,34 +589,31 @@ export default function ProductScreen() {
             <View>
               <Pressable onPress={goReviews} style={styles.reviewsSummaryRow}>
                 <View style={styles.reviewsSummaryLeft}>
-                  <Text style={styles.reviewsAvg}>4.6</Text>
+                  <Text style={styles.reviewsAvg}>{mainReviewSummary.average.toFixed(1)}</Text>
                   <View>
                     <Text style={styles.reviewsStars}>★★★★★</Text>
-                    <Text style={styles.reviewsCount}>128 reviews</Text>
+                    <Text style={styles.reviewsCount}>{mainReviewSummary.count} reviews</Text>
                   </View>
                 </View>
                 <ChevronRightIcon size={14} color={ds.ink2} strokeWidth={2.2} />
               </Pressable>
               <View style={styles.reviewPreviewList}>
-                {[
-                  { initials: 'AR', name: 'Anita R.', stars: 5, date: '2 weeks ago', text: 'Consistent batch quality every order. Our clinic has switched fully to this supplier.' },
-                  { initials: 'KM', name: 'Karan M.', stars: 5, date: '1 month ago', text: 'Fast dispatch and the packaging is always tamper-proof. Very reliable for repeat orders.' },
-                ].map((r) => (
-                  <View key={r.name} style={styles.reviewPreviewCard}>
+                {productReviews.reviews.map((r) => (
+                  <View key={r.id} style={styles.reviewPreviewCard}>
                     <View style={styles.reviewPreviewHeader}>
                       <View style={styles.reviewAvatar}>
-                        <Text style={styles.reviewAvatarText}>{r.initials}</Text>
+                        <Text style={styles.reviewAvatarText}>{r.customer_initials}</Text>
                       </View>
                       <View style={styles.reviewMeta}>
-                        <Text style={styles.reviewerName}>{r.name}</Text>
-                        <Text style={styles.reviewDate}>{r.date}</Text>
+                        <Text style={styles.reviewerName}>{r.customer_name}</Text>
+                        <Text style={styles.reviewDate}>{timeAgo(r.created_at)}</Text>
                       </View>
                       <View style={styles.reviewStarsChip}>
                         <StarIcon size={10} />
-                        <Text style={styles.reviewStarsChipText}>{r.stars}</Text>
+                        <Text style={styles.reviewStarsChipText}>{r.rating}</Text>
                       </View>
                     </View>
-                    <Text style={styles.reviewPreviewText}>{r.text}</Text>
+                    {r.comment && <Text style={styles.reviewPreviewText}>{r.comment}</Text>}
                   </View>
                 ))}
               </View>

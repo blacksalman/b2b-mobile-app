@@ -61,6 +61,24 @@ export async function storeMutate<T>(path: string, method: 'POST' | 'DELETE', bo
   return res.json();
 }
 
+// Same as storeMutate, but returns the parsed JSON body even on a non-2xx response instead of
+// throwing - for endpoints (reviewsApi.ts's submitReview) whose 4xx responses are expected,
+// meaningful outcomes with a real user-facing `message` (e.g. "you've already reviewed this
+// product"), not just an unexpected-failure case that should be swallowed into a generic error.
+export async function storeMutateExpectingError<T>(
+  path: string,
+  method: 'POST' | 'DELETE',
+  body?: Record<string, unknown>
+): Promise<{ ok: boolean; status: number; data: T }> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers: { ...COMMON_HEADERS, 'x-publishable-api-key': PUBLISHABLE_KEY, 'Content-Type': 'application/json', ...getAuthHeader() },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json();
+  return { ok: res.ok, status: res.status, data };
+}
+
 export interface MedusaProductSection {
   id: string;
   slug: string;

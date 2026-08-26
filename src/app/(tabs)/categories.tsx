@@ -13,6 +13,7 @@ import { useProductCategories, useCategoryProducts, useCollections } from '@/dat
 import { toRailProduct } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { productHref } from '@/data/idHash';
+import { useReviewSummaries } from '@/data/reviewsApi';
 import type { Product } from '@/data/types';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isCategories
@@ -80,9 +81,10 @@ export default function CategoriesScreen() {
     [filters.sort, filters.price, filters.avail, brandCollectionIds]
   );
   const productsState = useCategoryProducts(categoryId, query, categoryFilters);
+  const reviewSummaries = useReviewSummaries(useMemo(() => productsState.results.map((p) => p.id), [productsState.results]));
   const catProducts = useMemo(
-    () => productsState.results.map((p) => toRailProduct(p, cart, loggedIn)),
-    [productsState.results, cart, loggedIn]
+    () => productsState.results.map((p) => toRailProduct(p, cart, loggedIn, reviewSummaries)),
+    [productsState.results, cart, loggedIn, reviewSummaries]
   );
   const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
   const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();

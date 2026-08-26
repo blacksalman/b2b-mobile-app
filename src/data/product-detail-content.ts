@@ -129,24 +129,3 @@ export const brandStats = [
 export const brandUsps = ['Purity First', 'Physician-led', 'Quality Made'];
 export const brandAbout =
   'Ancient wisdom meets modern science at AyurvedaOne. Since 2016, we have focused on quality Ayurvedic wellness through physician-led formulations, modern R&D, and manufacturing that emphasizes purity, safety, and consistency for today’s lifestyles.';
-
-// Ported verbatim (lines 2191-2198) — same fixed rating summary and review list on every product's
-// Reviews screen, not per-product.
-export const reviewsSummary = {
-  avg: '4.6',
-  count: 128,
-  breakdown: [
-    { star: 5, pct: 68 },
-    { star: 4, pct: 19 },
-    { star: 3, pct: 8 },
-    { star: 2, pct: 3 },
-    { star: 1, pct: 2 },
-  ],
-};
-
-export const reviewList = [
-  { initials: 'AR', name: 'Anita R.', stars: 5, date: '2 weeks ago', text: 'Consistent batch quality every order. Our clinic has switched fully to this supplier.' },
-  { initials: 'KM', name: 'Karan M.', stars: 5, date: '1 month ago', text: 'Fast dispatch and the packaging is always tamper-proof. Very reliable for repeat orders.' },
-  { initials: 'LN', name: 'Leela N.', stars: 4, date: '1 month ago', text: 'Good product, pricing tiers are fair for bulk. Delivery took a day longer than expected once.' },
-  { initials: 'PS', name: 'Priya S.', stars: 5, date: '2 months ago', text: 'Great margin for retailers and the trade pricing makes planning easy each quarter.' },
-];

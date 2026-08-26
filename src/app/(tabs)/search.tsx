@@ -12,6 +12,7 @@ import { useRecentSearches } from '@/data/recentSearches';
 import { toRailProduct } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { productHref } from '@/data/idHash';
+import { useReviewSummaries } from '@/data/reviewsApi';
 import type { Product } from '@/data/types';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, isSearch
@@ -47,9 +48,10 @@ export default function SearchScreen() {
   // is a two-step fetch (search for the ranked id list, then hydrate price/collection/category
   // data), debounced 350ms so every keystroke doesn't fire a request.
   const search = useProductSearch(query);
+  const reviewSummaries = useReviewSummaries(useMemo(() => search.results.map((p) => p.id), [search.results]));
   const results = useMemo(
-    () => search.results.map((p) => toRailProduct(p, cart, loggedIn)),
-    [search.results, cart, loggedIn]
+    () => search.results.map((p) => toRailProduct(p, cart, loggedIn, reviewSummaries)),
+    [search.results, cart, loggedIn, reviewSummaries]
   );
   const hasQuery = query.trim().length > 0;
 

@@ -63,11 +63,18 @@ export const DsProductCard = React.memo(function DsProductCard({ product: p, wid
           <Text style={styles.name} numberOfLines={2}>{p.name}</Text>
         </Pressable>
         <Text style={styles.brand} numberOfLines={1}>{p.brand}</Text>
-        <View style={styles.ratingRow}>
-          <Text style={styles.star}>★</Text>
-          <Text style={styles.ratingValue}>{p.rating}</Text>
-          <Text style={styles.reviewCount}>({p.reviewCount})</Text>
-        </View>
+        {/* A real product with zero real reviews yet (reviewsApi.ts) shows an honest "0.0 (0)"
+            on the product detail page, but on the card itself that reads as a bad/unrated product
+            rather than "no reviews yet" - hidden here instead, same as most real storefronts only
+            show a rating badge once one actually exists. Mock-catalog products (still used by a
+            couple of legacy rails) keep their always-positive placeholder count unaffected. */}
+        {!!p.reviewCount && (
+          <View style={styles.ratingRow}>
+            <Text style={styles.star}>★</Text>
+            <Text style={styles.ratingValue}>{p.rating}</Text>
+            <Text style={styles.reviewCount}>({p.reviewCount})</Text>
+          </View>
+        )}
         {p.showPrice && (
           <View style={styles.priceBlock}>
             <View style={styles.priceRow}>

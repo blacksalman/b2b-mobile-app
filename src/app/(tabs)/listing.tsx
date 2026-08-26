@@ -15,6 +15,7 @@ import { useCategoryProducts } from '@/data/categoriesApi';
 import { toRailProduct } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { productHref } from '@/data/idHash';
+import { useReviewSummaries } from '@/data/reviewsApi';
 import type { Product } from '@/data/types';
 
 function addFlashLabel(name: string): string {
@@ -82,9 +83,10 @@ export default function ListingScreen() {
     [filters.sort, filters.price, filters.avail, isReal, params.collectionId]
   );
   const productsState = useCategoryProducts(null, query, realFilters, isReal);
+  const reviewSummaries = useReviewSummaries(useMemo(() => productsState.results.map((p) => p.id), [productsState.results]));
   const realListingProducts = useMemo(
-    () => productsState.results.map((p) => toRailProduct(p, cart, loggedIn)),
-    [productsState.results, cart, loggedIn]
+    () => productsState.results.map((p) => toRailProduct(p, cart, loggedIn, reviewSummaries)),
+    [productsState.results, cart, loggedIn, reviewSummaries]
   );
 
   const listingProducts = isReal ? realListingProducts : mockListingProducts;

@@ -17,6 +17,7 @@ import {
 import { useHomeApiData, toRailProduct, type ApiCategoryTile, type ApiBrand } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { useBuyAgainProducts } from '@/data/ordersApi';
+import { useReviewSummaries } from '@/data/reviewsApi';
 import { productHref } from '@/data/idHash';
 import type { Product } from '@/data/types';
 
@@ -41,38 +42,54 @@ export default function HomeScreen() {
   // real rail. Empty (and the whole section hidden) whenever there's no real order to derive it
   // from - logged out, or logged in with no past orders yet.
   const buyAgainApi = useBuyAgainProducts(loggedIn);
-  const buyAgain = useMemo(
-    () => buyAgainApi.products.map((p) => toRailProduct(p, cart, loggedIn)),
-    [buyAgainApi.products, cart, loggedIn]
-  );
 
   // Best sellers / New arrivals / Featured / Fast-moving offers / Concern shelves / category
   // tiles / brands / hero banners are all backed by the real backend now (product-sections,
   // category-sections, collections, banners) - see useHomeApiData.
   const apiData = useHomeApiData();
+
+  // Real rating/review-count aggregate (apps/backend's review module, reviewsApi.ts) for every
+  // product shown on this screen, fetched once as a single batch rather than per rail/per card.
+  const allProductIds = useMemo(
+    () => [
+      ...buyAgainApi.products.map((p) => p.id),
+      ...apiData.bestSellers.map((p) => p.id),
+      ...apiData.newArrivals.map((p) => p.id),
+      ...apiData.featured.map((p) => p.id),
+      ...apiData.fastMoving.map((p) => p.id),
+      ...apiData.concernShelves.flatMap((c) => c.rawProducts.map((p) => p.id)),
+    ],
+    [buyAgainApi.products, apiData.bestSellers, apiData.newArrivals, apiData.featured, apiData.fastMoving, apiData.concernShelves]
+  );
+  const reviewSummaries = useReviewSummaries(allProductIds);
+
+  const buyAgain = useMemo(
+    () => buyAgainApi.products.map((p) => toRailProduct(p, cart, loggedIn, reviewSummaries)),
+    [buyAgainApi.products, cart, loggedIn, reviewSummaries]
+  );
   const bestSellers = useMemo(
-    () => apiData.bestSellers.map((p) => toRailProduct(p, cart, loggedIn)),
-    [apiData.bestSellers, cart, loggedIn]
+    () => apiData.bestSellers.map((p) => toRailProduct(p, cart, loggedIn, reviewSummaries)),
+    [apiData.bestSellers, cart, loggedIn, reviewSummaries]
   );
   const newArrivals = useMemo(
-    () => apiData.newArrivals.map((p) => toRailProduct(p, cart, loggedIn)),
-    [apiData.newArrivals, cart, loggedIn]
+    () => apiData.newArrivals.map((p) => toRailProduct(p, cart, loggedIn, reviewSummaries)),
+    [apiData.newArrivals, cart, loggedIn, reviewSummaries]
   );
   const featured = useMemo(
-    () => apiData.featured.map((p) => toRailProduct(p, cart, loggedIn)),
-    [apiData.featured, cart, loggedIn]
+    () => apiData.featured.map((p) => toRailProduct(p, cart, loggedIn, reviewSummaries)),
+    [apiData.featured, cart, loggedIn, reviewSummaries]
   );
   const fastMoving = useMemo(
-    () => apiData.fastMoving.map((p) => toRailProduct(p, cart, loggedIn)),
-    [apiData.fastMoving, cart, loggedIn]
+    () => apiData.fastMoving.map((p) => toRailProduct(p, cart, loggedIn, reviewSummaries)),
+    [apiData.fastMoving, cart, loggedIn, reviewSummaries]
   );
   const concerns = useMemo(
     () =>
       apiData.concernShelves.map((c) => ({
         ...c,
-        products: c.rawProducts.map((p) => toRailProduct(p, cart, loggedIn)),
+        products: c.rawProducts.map((p) => toRailProduct(p, cart, loggedIn, reviewSummaries)),
       })),
-    [apiData.concernShelves, cart, loggedIn]
+    [apiData.concernShelves, cart, loggedIn, reviewSummaries]
   );
 
   const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
