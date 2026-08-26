@@ -294,8 +294,9 @@ export async function searchProducts(opts: {
   maxPrice?: number;
   inStock?: boolean;
   limit?: number;
+  offset?: number;
 }): Promise<{ ids: string[]; count: number }> {
-  const { q, categoryId, collectionId, sort, minPrice, maxPrice, inStock, limit = 24 } = opts;
+  const { q, categoryId, collectionId, sort, minPrice, maxPrice, inStock, limit = 24, offset = 0 } = opts;
   const needsRegion = minPrice !== undefined || maxPrice !== undefined || sort === 'price_asc' || sort === 'price_desc';
   const data = await storeFetch<{ products: { id: string }[]; count: number }>('/store/products-search', {
     q,
@@ -307,6 +308,7 @@ export async function searchProducts(opts: {
     in_stock: inStock ? 'true' : undefined,
     region_id: needsRegion ? DEFAULT_REGION_ID : undefined,
     limit: String(limit),
+    offset: offset ? String(offset) : undefined,
   });
   return { ids: data.products.map((p) => p.id), count: data.count };
 }

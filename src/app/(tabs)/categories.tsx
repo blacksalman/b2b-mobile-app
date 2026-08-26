@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
@@ -183,58 +183,78 @@ export default function CategoriesScreen() {
         )}
       </View>
 
-      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-        {hasActiveFilters && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillsRow} contentContainerStyle={styles.pillsRowContent}>
-            {activeFilterPills.map((pill) => (
-              <View key={pill.key} style={styles.pill}>
-                <Text style={styles.pillText}>{pill.label}</Text>
-                <Pressable onPress={pill.remove} style={styles.pillRemove} hitSlop={6}>
-                  <CloseIcon size={8} color={ds.primaryInk} strokeWidth={2.6} />
-                </Pressable>
-              </View>
-            ))}
-            <Pressable onPress={clearFilters} hitSlop={8}>
-              <Text style={styles.clearAll}>Clear all</Text>
-            </Pressable>
-          </ScrollView>
-        )}
-
-        {productsState.loading ? (
-          <View style={styles.loadingState}>
-            <ActivityIndicator color={ds.primaryInk} />
-          </View>
-        ) : catEmpty ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIcon}>
-              <PackageIcon size={28} color={ds.primaryInk} />
-            </View>
-            <Text style={styles.emptyTitle}>{catEmptyTitle}</Text>
-            <Text style={styles.emptyBody}>{catEmptyBody}</Text>
-            {!!catEmptyCta && (
-              <Pressable onPress={catEmptyReset} style={styles.emptyCta}>
-                <Text style={styles.emptyCtaText}>{catEmptyCta}</Text>
+      <FlatList
+        style={styles.body}
+        contentContainerStyle={styles.bodyContent}
+        data={catProducts}
+        keyExtractor={(p) => String(p.id)}
+        numColumns={2}
+        columnWrapperStyle={styles.gridRow}
+        // Real lazy loading: only PAGE_LIMIT products are ever fetched at a time
+        // (useCategoryProducts/categoriesApi.ts) - scrolling near the bottom fetches the next
+        // page instead of the screen ever holding the whole (possibly thousands-strong) category
+        // in memory at once.
+        onEndReachedThreshold={0.5}
+        onEndReached={() => {
+          if (productsState.hasMore) productsState.loadMore();
+        }}
+        ListHeaderComponent={
+          hasActiveFilters ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillsRow} contentContainerStyle={styles.pillsRowContent}>
+              {activeFilterPills.map((pill) => (
+                <View key={pill.key} style={styles.pill}>
+                  <Text style={styles.pillText}>{pill.label}</Text>
+                  <Pressable onPress={pill.remove} style={styles.pillRemove} hitSlop={6}>
+                    <CloseIcon size={8} color={ds.primaryInk} strokeWidth={2.6} />
+                  </Pressable>
+                </View>
+              ))}
+              <Pressable onPress={clearFilters} hitSlop={8}>
+                <Text style={styles.clearAll}>Clear all</Text>
               </Pressable>
-            )}
-          </View>
-        ) : (
-          <View style={styles.grid}>
-            {catProducts.map((p) => (
-              <DsProductCard
-                key={p.id}
-                product={p}
-                width="48%"
-                onOpen={() => openProduct(p)}
-                onAdd={() => addApiProduct(p)}
-                onInc={() => incApiProduct(p)}
-                onDec={() => decApiProduct(p)}
-                onLogin={goLogin}
-                onSelectOption={() => setVariantSheetProduct(p)}
-              />
-            ))}
-          </View>
+            </ScrollView>
+          ) : null
+        }
+        ListEmptyComponent={
+          productsState.loading ? (
+            <View style={styles.loadingState}>
+              <ActivityIndicator color={ds.primaryInk} />
+            </View>
+          ) : catEmpty ? (
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIcon}>
+                <PackageIcon size={28} color={ds.primaryInk} />
+              </View>
+              <Text style={styles.emptyTitle}>{catEmptyTitle}</Text>
+              <Text style={styles.emptyBody}>{catEmptyBody}</Text>
+              {!!catEmptyCta && (
+                <Pressable onPress={catEmptyReset} style={styles.emptyCta}>
+                  <Text style={styles.emptyCtaText}>{catEmptyCta}</Text>
+                </Pressable>
+              )}
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          productsState.loadingMore ? (
+            <View style={styles.loadingMoreState}>
+              <ActivityIndicator color={ds.primaryInk} />
+            </View>
+          ) : null
+        }
+        renderItem={({ item: p }) => (
+          <DsProductCard
+            product={p}
+            width="48%"
+            onOpen={() => openProduct(p)}
+            onAdd={() => addApiProduct(p)}
+            onInc={() => incApiProduct(p)}
+            onDec={() => decApiProduct(p)}
+            onLogin={goLogin}
+            onSelectOption={() => setVariantSheetProduct(p)}
+          />
         )}
-      </ScrollView>
+      />
 
       <VariantSheet visible={!!variantSheetProduct} product={variantSheetProduct} onClose={() => setVariantSheetProduct(null)} />
 
@@ -315,7 +335,7 @@ const styles = StyleSheet.create({
   railChipTextInactive: { color: '#586360' },
   loadingState: { paddingTop: dsSpacing.xl + dsSpacing.lg, alignItems: 'center' },
   body: { flex: 1 },
-  bodyContent: { paddingBottom: dsSpacing.xl },
+  bodyContent: { paddingTop: dsSpacing.md, paddingBottom: dsSpacing.xl },
   pillsRow: { flexGrow: 0 },
   pillsRowContent: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
   pill: {
@@ -339,5 +359,6 @@ const styles = StyleSheet.create({
   emptyBody: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink2, marginTop: 4, textAlign: 'center' },
   emptyCta: { marginTop: dsSpacing.lg, height: 48, borderRadius: dsRadii.button, backgroundColor: ds.primaryStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: dsSpacing.lg },
   emptyCtaText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: dsSpacing.md, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
+  gridRow: { paddingHorizontal: dsSpacing.lg, gap: dsSpacing.md, marginBottom: dsSpacing.md },
+  loadingMoreState: { paddingVertical: dsSpacing.lg, alignItems: 'center' },
 });

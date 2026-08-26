@@ -89,12 +89,19 @@ export interface CategoryFilters {
 
 export interface CategoryProductsState {
   loading: boolean;
+  // True only while fetching a NEXT page (loadMore) - `loading` above stays false during this,
+  // so the existing grid stays on screen with a footer spinner instead of being replaced.
+  loadingMore: boolean;
   error: boolean;
   results: MedusaProduct[];
   count: number;
+  // Whether another page exists beyond `results` - drives whether the screen's onEndReached
+  // should call loadMore at all.
+  hasMore: boolean;
+  loadMore: () => void;
 }
 
-const EMPTY: CategoryProductsState = { loading: false, error: false, results: [], count: 0 };
+const EMPTY_STATE = { loading: false, loadingMore: false, error: false, results: [] as MedusaProduct[], count: 0, hasMore: false };
 const DEBOUNCE_MS = 350;
 const PAGE_LIMIT = 40;
 
@@ -111,27 +118,50 @@ const PAGE_LIMIT = 40;
 // skip fetching entirely rather than wastefully browsing the full catalogue on every mock-path
 // visit.
 //
-// No pagination yet - always the first PAGE_LIMIT products for the current category/query/
-// filters. Fine for now (this is the first cut of this screen); a real "load more" is
-// follow-up work if browsing a huge category turns out to need it.
+// Real pagination: PAGE_LIMIT products per page, more pages fetched via loadMore() (called from
+// the screen's FlatList onEndReached) rather than ever fetching the whole catalog at once - a
+// category can have thousands of products (e.g. this catalog's largest category has 7000+), so
+// "browse everything, but only what's actually been scrolled to" is the point, not "fetch it all
+// upfront".
+//
+// Out-of-stock exclusion is BROWSING-only, not search-wide: `inStock` is only forced on when
+// there's no text query. Searching for a specific product by name should still surface it (and
+// show it's out of stock) rather than have it silently vanish from results - only the
+// no-query/browse-a-category path hides out-of-stock items entirely.
 export function useCategoryProducts(
   categoryId: string | null,
   query: string,
   filters: CategoryFilters,
   enabled: boolean = true
 ): CategoryProductsState {
-  const [state, setState] = useState<CategoryProductsState>(EMPTY);
+  const [state, setState] = useState(EMPTY_STATE);
   const requestId = useRef(0);
+  const offsetRef = useRef(0);
+  const loadingMoreRef = useRef(false);
   const { sort, price, avail, brandCollectionIds } = filters;
+  const trimmed = query.trim();
+  const hasQuery = trimmed.length > 0;
+  const priceRange = PRICE_RANGES[price];
+
+  const baseFetchArgs = {
+    q: trimmed || undefined,
+    categoryId: categoryId ?? undefined,
+    collectionId: brandCollectionIds.length ? brandCollectionIds.join(',') : undefined,
+    sort: SORT_MAP[sort],
+    minPrice: priceRange?.min,
+    maxPrice: priceRange?.max,
+    inStock: !hasQuery,
+    limit: PAGE_LIMIT,
+  };
 
   useEffect(() => {
     if (!enabled) {
-      setState(EMPTY);
+      setState(EMPTY_STATE);
       return;
     }
 
-    const trimmed = query.trim();
     const myRequestId = ++requestId.current;
+    offsetRef.current = 0;
     // Clears `results` immediately (not just a spread-over-prev) - otherwise switching
     // category/collection (e.g. Listing's brand cards) kept showing the PREVIOUS selection's
     // products for the whole fetch, which read as "wrong brand" rather than "loading". `count`
@@ -140,33 +170,23 @@ export function useCategoryProducts(
     // settling on the real count; screens showing an item count of their own gate that on
     // `loading` directly instead of trusting this value while a fetch is in flight (see
     // listing.tsx).
-    setState((prev) => ({ loading: true, error: false, results: [], count: prev.count }));
-
-    const priceRange = PRICE_RANGES[price];
+    setState((prev) => ({ ...EMPTY_STATE, loading: true, count: prev.count }));
 
     const timeout = setTimeout(
       async () => {
         try {
-          const { ids, count } = await searchProducts({
-            q: trimmed || undefined,
-            categoryId: categoryId ?? undefined,
-            collectionId: brandCollectionIds.length ? brandCollectionIds.join(',') : undefined,
-            sort: SORT_MAP[sort],
-            minPrice: priceRange?.min,
-            maxPrice: priceRange?.max,
-            inStock: avail.includes('In stock only'),
-            limit: PAGE_LIMIT,
-          });
+          const { ids, count } = await searchProducts({ ...baseFetchArgs, offset: 0 });
           const hydrated = await fetchProductsByIds(ids);
           const byId = new Map(hydrated.map((p) => [p.id, p] as const));
           const ordered = ids.map((id) => byId.get(id)).filter((p): p is MedusaProduct => !!p);
 
           if (myRequestId === requestId.current) {
-            setState({ loading: false, error: false, results: ordered, count });
+            offsetRef.current = ordered.length;
+            setState({ loading: false, loadingMore: false, error: false, results: ordered, count, hasMore: ordered.length < count });
           }
         } catch {
           if (myRequestId === requestId.current) {
-            setState({ loading: false, error: true, results: [], count: 0 });
+            setState({ ...EMPTY_STATE, error: true });
           }
         }
       },
@@ -174,7 +194,40 @@ export function useCategoryProducts(
     );
 
     return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, categoryId, query, sort, price, avail, brandCollectionIds]);
 
-  return state;
+  const loadMore = () => {
+    if (!enabled || loadingMoreRef.current || state.loading || !state.hasMore) return;
+    loadingMoreRef.current = true;
+    const myRequestId = requestId.current;
+    setState((prev) => ({ ...prev, loadingMore: true }));
+
+    (async () => {
+      try {
+        const { ids, count } = await searchProducts({ ...baseFetchArgs, offset: offsetRef.current });
+        const hydrated = await fetchProductsByIds(ids);
+        const byId = new Map(hydrated.map((p) => [p.id, p] as const));
+        const ordered = ids.map((id) => byId.get(id)).filter((p): p is MedusaProduct => !!p);
+
+        if (myRequestId === requestId.current) {
+          offsetRef.current += ordered.length;
+          setState((prev) => {
+            const results = [...prev.results, ...ordered];
+            return { loading: false, loadingMore: false, error: false, results, count, hasMore: results.length < count };
+          });
+        }
+      } catch {
+        // A failed "load more" just stops there - the products already on screen stay put,
+        // no need to blow away the whole grid over one page failing.
+        if (myRequestId === requestId.current) {
+          setState((prev) => ({ ...prev, loadingMore: false }));
+        }
+      } finally {
+        loadingMoreRef.current = false;
+      }
+    })();
+  };
+
+  return { ...state, loadMore };
 }
