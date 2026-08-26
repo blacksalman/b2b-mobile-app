@@ -206,9 +206,15 @@ export default function CheckoutScreen() {
     setPaymentSheetOpen(true);
     completeOrder();
   };
-  // Customer backed out of the Razorpay sheet themselves (closed it / tapped outside) - just
-  // close it, no error to show, no payment sheet - they can tap "Place order" again whenever.
-  const onRazorpayDismiss = () => setRazorpaySession(null);
+  // Customer backed out of the Razorpay sheet themselves (closed it / tapped outside, Razorpay's
+  // own `modal.ondismiss`) - no payment was attempted, but from the customer's point of view the
+  // order still didn't go through, so this shows the same failure sheet as a real payment error.
+  const onRazorpayDismiss = () => {
+    setRazorpaySession(null);
+    setOrderError('Payment was not completed. Please try again.');
+    setPaymentStatus('failed');
+    setPaymentSheetOpen(true);
+  };
   const onRazorpayError = (message: string) => {
     setRazorpaySession(null);
     setOrderError(message);
