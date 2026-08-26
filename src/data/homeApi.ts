@@ -4,7 +4,7 @@ import {
   fetchCategorySections,
   fetchBanners,
   fetchCollections,
-  fetchCollectionProductCount,
+  fetchCollectionProductCounts,
   fetchProductsByIds,
   searchProducts,
   storeFetch,
@@ -124,8 +124,7 @@ export function useHomeApiData(): HomeApiData {
           fetchCategorySections(),
           fetchBanners('home'),
           fetchCollections(),
-          // limit:1 - only `count` is read from either, same cheap-count trick
-          // fetchCollectionProductCount already uses for a brand's product total.
+          // limit:1 - only `count` is read from either.
           searchProducts({ limit: 1 }),
           storeFetch<{ count: number }>('/store/product-categories', { limit: '1', parent_category_id: 'null' }),
         ]);
@@ -142,9 +141,11 @@ export function useHomeApiData(): HomeApiData {
         const allIds = [
           ...new Set(sections.flatMap((s) => s.products.map((p) => p.id))),
         ];
-        const productsById = new Map(
-          (await fetchProductsByIds(allIds)).map((p) => [p.id, p] as const)
-        );
+        const [hydratedProducts, brandCounts] = await Promise.all([
+          fetchProductsByIds(allIds),
+          fetchCollectionProductCounts(collectionsRes.collections.map((c) => c.id)),
+        ]);
+        const productsById = new Map(hydratedProducts.map((p) => [p.id, p] as const));
         const resolve = (ids: { id: string }[]): MedusaProduct[] =>
           ids.map((p) => productsById.get(p.id)).filter((p): p is MedusaProduct => !!p);
 
@@ -164,16 +165,14 @@ export function useHomeApiData(): HomeApiData {
           }
         }
 
-        const brands: ApiBrand[] = await Promise.all(
-          collectionsRes.collections.map(async (c, i) => ({
-            id: c.id,
-            name: c.title,
-            initials: initialsOf(c.title),
-            line: 'Direct trade partner',
-            skus: await fetchCollectionProductCount(c.id),
-            tint: BRAND_TINTS[i % BRAND_TINTS.length],
-          }))
-        );
+        const brands: ApiBrand[] = collectionsRes.collections.map((c, i) => ({
+          id: c.id,
+          name: c.title,
+          initials: initialsOf(c.title),
+          line: 'Direct trade partner',
+          skus: brandCounts[c.id] ?? 0,
+          tint: BRAND_TINTS[i % BRAND_TINTS.length],
+        }));
 
         if (cancelled) return;
 

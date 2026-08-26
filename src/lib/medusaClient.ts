@@ -125,15 +125,17 @@ export function fetchCollections(): Promise<{ collections: MedusaCollection[] }>
   return storeFetch('/store/collections', { limit: '100' });
 }
 
-// products-search's `count` (with limit=1, no results actually pulled beyond the one row)
-// is the cheapest way to get a collection's real product total - see
-// src/api/store/products-search/route.ts in the backend, no dedicated count endpoint exists.
-export async function fetchCollectionProductCount(collectionId: string): Promise<number> {
-  const data = await storeFetch<{ count: number }>('/store/products-search', {
-    collection_id: collectionId,
-    limit: '1',
+// Batched product count per collection - one request for every brand card's SKU count instead
+// of one products-search call per collection (was ~100 concurrent requests from the phone once
+// the Aug 2026 cleanup restore brought collections back up from 2 to ~390 - see
+// src/api/store/collections/product-counts/route.ts in the backend for why this exists instead
+// of the old per-id products-search trick). Returns 0 for any id with no published products.
+export async function fetchCollectionProductCounts(collectionIds: string[]): Promise<Record<string, number>> {
+  if (!collectionIds.length) return {};
+  const data = await storeFetch<{ counts: Record<string, number> }>('/store/collections/product-counts', {
+    ids: collectionIds.join(','),
   });
-  return data.count;
+  return data.counts;
 }
 
 export interface MedusaVariantPrice {
