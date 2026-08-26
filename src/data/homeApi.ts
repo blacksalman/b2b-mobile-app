@@ -3,7 +3,7 @@ import {
   fetchProductSections,
   fetchCategorySections,
   fetchBanners,
-  fetchCollections,
+  fetchBrandSections,
   fetchCollectionProductCounts,
   fetchProductsByIds,
   searchProducts,
@@ -25,7 +25,7 @@ import type { RailProduct } from './home-content';
 export { hashProductId };
 
 // Home screen sections backed by the backend's real admin-curated content
-// (product-sections / category-sections / banners / collections), as opposed
+// (product-sections / category-sections / brand-sections / banners), as opposed
 // to home-content.ts which stays fully mock for Buy again (still deferred -
 // pending a decision with the doctor) and the purely-editorial rails
 // (Doctor's Talk, What buyers say, promo banners) that have no backend
@@ -119,15 +119,19 @@ export function useHomeApiData(): HomeApiData {
 
     async function load() {
       try {
-        const [sectionsRes, categorySectionsRes, bannersRes, collectionsRes, catalogProducts, catalogCategories] = await Promise.all([
+        const [sectionsRes, categorySectionsRes, bannersRes, brandSectionsRes, catalogProducts, catalogCategories] = await Promise.all([
           fetchProductSections(),
           fetchCategorySections(),
           fetchBanners('home'),
-          fetchCollections(),
+          // "home-brands" - the admin-curated section (Operations > Brand Sections in admin,
+          // title "Home Brands") backing this rail. Shows only the admin's picks instead of
+          // every collection in the catalog - same reasoning as category-sections' "category-page".
+          fetchBrandSections('home-brands'),
           // limit:1 - only `count` is read from either.
           searchProducts({ limit: 1 }),
           storeFetch<{ count: number }>('/store/product-categories', { limit: '1', parent_category_id: 'null' }),
         ]);
+        const curatedBrands = brandSectionsRes.brand_sections[0]?.brands ?? [];
 
         const sections = sectionsRes.product_sections.filter((s) => !EXCLUDED_SLUGS.has(s.slug));
         const bestSellersSection = sections.find((s) => s.slug === 'best-sellers');
@@ -143,7 +147,7 @@ export function useHomeApiData(): HomeApiData {
         ];
         const [hydratedProducts, brandCounts] = await Promise.all([
           fetchProductsByIds(allIds),
-          fetchCollectionProductCounts(collectionsRes.collections.map((c) => c.id)),
+          fetchCollectionProductCounts(curatedBrands.map((c) => c.id)),
         ]);
         const productsById = new Map(hydratedProducts.map((p) => [p.id, p] as const));
         const resolve = (ids: { id: string }[]): MedusaProduct[] =>
@@ -165,7 +169,7 @@ export function useHomeApiData(): HomeApiData {
           }
         }
 
-        const brands: ApiBrand[] = collectionsRes.collections.map((c, i) => ({
+        const brands: ApiBrand[] = curatedBrands.map((c, i) => ({
           id: c.id,
           name: c.title,
           initials: initialsOf(c.title),

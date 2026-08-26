@@ -125,6 +125,23 @@ export function fetchCollections(): Promise<{ collections: MedusaCollection[] }>
   return storeFetch('/store/collections', { limit: '100' });
 }
 
+// Admin-curated brand groups (Operations > Brand Sections in admin) - same curation mechanism as
+// category-sections/product-sections, just holding collection ids instead. Backs the Home
+// screen's "Brands" rail (slug "home-brands") so it shows only the brands an admin picked instead
+// of every collection in the catalog (~390 after the Aug 2026 cleanup restore - see
+// fetchCollectionProductCounts's comment for why that mattered for performance too).
+export interface MedusaBrandSection {
+  id: string;
+  slug: string;
+  title: string;
+  rank: number;
+  brands: MedusaCollection[];
+}
+
+export function fetchBrandSections(slug?: string): Promise<{ brand_sections: MedusaBrandSection[] }> {
+  return storeFetch('/store/brand-sections', { slug });
+}
+
 // Batched product count per collection - one request for every brand card's SKU count instead
 // of one products-search call per collection (was ~100 concurrent requests from the phone once
 // the Aug 2026 cleanup restore brought collections back up from 2 to ~390 - see
