@@ -99,8 +99,8 @@ export interface MedusaCategorySection {
   categories: { id: string; name: string; handle: string }[];
 }
 
-export function fetchCategorySections(): Promise<{ category_sections: MedusaCategorySection[] }> {
-  return storeFetch('/store/category-sections');
+export function fetchCategorySections(slug?: string): Promise<{ category_sections: MedusaCategorySection[] }> {
+  return storeFetch('/store/category-sections', { slug });
 }
 
 export interface MedusaBanner {

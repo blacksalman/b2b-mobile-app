@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { storeFetch, searchProducts, fetchProductsByIds, fetchCollections, type MedusaProduct, type MedusaCollection } from '@/lib/medusaClient';
+import { searchProducts, fetchProductsByIds, fetchCollections, fetchCategorySections, type MedusaProduct, type MedusaCollection } from '@/lib/medusaClient';
 
 export interface MedusaProductCategory {
   id: string;
@@ -7,16 +7,14 @@ export interface MedusaProductCategory {
   handle: string;
 }
 
-function fetchProductCategories(): Promise<{ product_categories: MedusaProductCategory[] }> {
-  // Top-level only (parent_category_id=null) - matches what Medusa Admin's category list shows
-  // by default (13 of this catalog's 84 total categories; the other 71 are children nested
-  // under these). Flattening in the other 71 read as clutter with no hierarchy shown - can add
-  // drill-down into a category's children later if that's wanted.
-  return storeFetch('/store/product-categories', {
-    limit: '100',
-    fields: 'id,name,handle',
-    parent_category_id: 'null',
-  });
+// The chip rail on the Categories screen shows the admin-curated "category page" Category
+// Section (Operations > Category Sections in admin, slug "category-page") instead of every
+// top-level category in the catalog - this store has 84 total categories (13 top-level), which
+// read as clutter with no way to hide the ones that don't belong on this screen. Same mechanism
+// Home's own category rails already use (fetchCategorySections), just a different slug.
+async function fetchProductCategories(): Promise<{ product_categories: MedusaProductCategory[] }> {
+  const { category_sections } = await fetchCategorySections('category-page');
+  return { product_categories: category_sections[0]?.categories ?? [] };
 }
 
 // The real category list for the Categories screen's chip rail - native Medusa store route
