@@ -25,18 +25,14 @@ import type { RailProduct } from './home-content';
 export { hashProductId };
 
 // Home screen sections backed by the backend's real admin-curated content
-// (product-sections / category-sections / brand-sections / banners), as opposed
-// to home-content.ts which stays fully mock for Buy again (still deferred -
-// pending a decision with the doctor) and the purely-editorial rails
-// (Doctor's Talk, What buyers say, promo banners) that have no backend
-// model at all yet. Fast-moving offers used to be deferred alongside Buy
-// again too, but now has a real product-section (slug "fast-moving-offer")
-// and renders as its own real rail (see fastMoving below) - same shape as
-// bestSellers/newArrivals/featured, no more special-casing its own useCase-
-// labeled row layout (that was mock-only content with no real equivalent).
+// (product-sections / category-sections / brand-sections / banners). Buy again and What buyers
+// say are ALSO real now (ordersApi.ts's useBuyAgainProducts, reviewsApi.ts's useRecentReviews
+// respectively) but neither is a product-section, so both stay out of this file entirely -
+// index.tsx calls their own hooks directly. Only Doctor's Talk and the promo banners remain
+// purely-editorial mock content (home-content.ts) with no backend model yet.
 //
-// `buy-again` still stays excluded here - it stays on mock data until that
-// separate decision is made.
+// `buy-again` stays excluded here since it was never a real product-section to begin with (its
+// content comes from order history, not this admin-curated mechanism).
 const EXCLUDED_SLUGS = new Set(['buy-again']);
 
 export interface ApiConcernShelf {
@@ -127,9 +123,11 @@ export function useHomeApiData(): HomeApiData {
           // title "Home Brands") backing this rail. Shows only the admin's picks instead of
           // every collection in the catalog - same reasoning as category-sections' "category-page".
           fetchBrandSections('home-brands'),
-          // limit:1 - only `count` is read from either.
+          // limit:1 - only `count` is read from either. No parent_category_id filter - this
+          // should match the FULL category count (matches admin's Product > Categories menu,
+          // e.g. 84), not just the 13 top-level ones.
           searchProducts({ limit: 1 }),
-          storeFetch<{ count: number }>('/store/product-categories', { limit: '1', parent_category_id: 'null' }),
+          storeFetch<{ count: number }>('/store/product-categories', { limit: '1' }),
         ]);
         const curatedBrands = brandSectionsRes.brand_sections[0]?.brands ?? [];
 
@@ -232,13 +230,19 @@ function cheapestVariant(mp: MedusaProduct) {
 // Mirrors the backend's own isVariantInStock (src/api/store/products-search/route.ts) exactly,
 // so a product's stock state agrees with what the real in_stock search filter would say: not
 // inventory-tracked, or backorder allowed, or some stock location has available_quantity > 0.
-function isVariantInStock(variant?: MedusaVariant): boolean {
+export function isVariantInStock(variant?: MedusaVariant): boolean {
   if (!variant) return true;
   if (!variant.manage_inventory) return true;
   if (variant.allow_backorder) return true;
   return (variant.inventory_items ?? []).some((item) =>
     (item.inventory?.location_levels ?? []).some((level) => (level.available_quantity ?? 0) > 0)
   );
+}
+
+// Product-level in-stock check - true if ANY variant is purchasable (same "has a purchasable
+// option" reasoning as cheapestVariant preferring an in-stock variant over the cheapest one).
+export function isProductInStock(product: MedusaProduct): boolean {
+  return (product.variants ?? []).some((v) => isVariantInStock(v));
 }
 
 // Every real variant this product has, for the "Select option" picker (DsProductCard) and the

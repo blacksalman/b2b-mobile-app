@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { fetchOrders, fetchOrder, fetchProductsByIds, type MedusaOrder, type MedusaProduct } from '@/lib/medusaClient';
+import { isProductInStock } from './homeApi';
 
 // Real "Buy again" data source (GET /store/orders, auto-scoped to the logged-in customer via the
 // bearer token - see authToken.ts). Deliberately re-fetches CURRENT product data (price, images,
@@ -60,9 +61,13 @@ export function useBuyAgainProducts(loggedIn: boolean): BuyAgainData {
         const products = await fetchProductsByIds(ids);
         const byId = new Map(products.map((p) => [p.id, p] as const));
         // Re-sorted to the original most-recently-ordered-first order (fetchProductsByIds makes
-        // no ordering guarantee) - a product removed from the catalog since it was ordered is
-        // simply absent from `products` and silently drops out here, never shown as a gap.
-        const ordered = ids.map((id) => byId.get(id)).filter((p): p is MedusaProduct => !!p);
+        // no ordering guarantee) - a product removed from the catalog since it was ordered, OR
+        // now completely out of stock, is simply absent here and silently drops out, never shown
+        // as a gap (same reasoning as the catalog-removal case - a "buy again" that can't
+        // actually be bought again isn't useful to show).
+        const ordered = ids
+          .map((id) => byId.get(id))
+          .filter((p): p is MedusaProduct => !!p && isProductInStock(p));
 
         if (!cancelled) setData({ loading: false, products: ordered });
       } catch {

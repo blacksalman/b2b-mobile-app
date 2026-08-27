@@ -211,10 +211,5 @@ export const doctorTalks = [
   { quote: 'Consistent supply and clear labeling — it is rare to find a wholesale partner this reliable.', name: 'Dr. Leela Nair', title: 'Dietitian & Wellness Consultant', initials: 'LN' },
 ];
 
-// --- What buyers say (line 2838) — unchanged content from the previous pull. ---
-export const buyerReviews = [
-  { quote: 'Ordering for our pharmacy used to take hours across three distributors. Now it is one app, one delivery slot, and prices that make sense for bulk.', name: 'Priya Sharma', tag: 'Pharmacy owner, Bengaluru', initials: 'PS' },
-  { quote: 'Consistent stock, transparent pricing, and support that actually answers the phone during peak hours.', name: 'Farhan Sheikh', tag: 'Wellness store chain manager, Pune', initials: 'FS' },
-  { quote: 'Switched our whole dispensary procurement here last quarter. Delivery slots keep our clinic running without gaps.', name: 'Meera Nambiar', tag: 'Ayurvedic clinic dispensary head, Kochi', initials: 'MN' },
-  { quote: 'The trade pricing tiers made it easy to plan our budget months ahead. Reordering takes minutes now.', name: 'Rohit Verma', tag: 'Hospital pharmacy procurement lead, Jaipur', initials: 'RV' },
-];
+// "What buyers say" no longer uses mock data - see reviewsApi.ts's useRecentReviews
+// (GET /store/reviews, real approved reviews) and index.tsx's reviewsWithComment.

@@ -129,6 +129,41 @@ export function useProductReviews(productId: string | null, limit = 10): Product
   return { ...state, refetch: () => setTick((t) => t + 1) };
 }
 
+export interface RecentReview extends StoreReview {
+  product_id: string;
+  product_title: string | null;
+}
+
+interface RecentReviewsState {
+  loading: boolean;
+  reviews: RecentReview[];
+}
+
+// Site-wide feed of the most recent approved reviews across every product (GET /store/reviews
+// with no product_id) - backs Home's "What buyers say", replacing the fully-invented mock
+// testimonials (home-content.ts's old buyerReviews) with real customer reviews. Only 1 real
+// approved review exists as of this build, so this rail is deliberately real-but-sparse rather
+// than padded out with anything fake.
+export function useRecentReviews(limit = 5): RecentReviewsState {
+  const [state, setState] = useState<RecentReviewsState>({ loading: true, reviews: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+    storeFetch<{ reviews: RecentReview[] }>('/store/reviews', { limit: String(limit) })
+      .then((data) => {
+        if (!cancelled) setState({ loading: false, reviews: data.reviews });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ loading: false, reviews: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [limit]);
+
+  return state;
+}
+
 export type SubmitReviewResult = { ok: true } | { ok: false; message: string };
 
 // Requires login (see middlewares.ts's "/store/reviews" POST entry) and that the customer's own

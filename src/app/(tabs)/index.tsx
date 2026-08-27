@@ -10,14 +10,13 @@ import { VariantSheet } from '@/components/shell/VariantSheet';
 import { MarginTrendIcon, DeliveryBoxIcon, ShieldCheckIcon, ChevronRightIcon, ConcernLeafIcon, CartIcon, TrashIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import {
-  buyerReviews,
   doctorTalks,
   promoBanners,
 } from '@/data/home-content';
 import { useHomeApiData, toRailProduct, type ApiCategoryTile, type ApiBrand } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { useBuyAgainProducts } from '@/data/ordersApi';
-import { useReviewSummaries } from '@/data/reviewsApi';
+import { useReviewSummaries, useRecentReviews } from '@/data/reviewsApi';
 import { productHref } from '@/data/idHash';
 import type { Product } from '@/data/types';
 
@@ -42,6 +41,14 @@ export default function HomeScreen() {
   // real rail. Empty (and the whole section hidden) whenever there's no real order to derive it
   // from - logged out, or logged in with no past orders yet.
   const buyAgainApi = useBuyAgainProducts(loggedIn);
+
+  // Real approved reviews (GET /store/reviews, no product_id - site-wide feed), most recent
+  // first, capped at 5 - replaces the old fully-invented buyerReviews mock.
+  const recentReviews = useRecentReviews(5);
+  const reviewsWithComment = useMemo(
+    () => recentReviews.reviews.filter((r) => !!r.comment),
+    [recentReviews.reviews]
+  );
 
   // Best sellers / New arrivals / Featured / Fast-moving offers / Concern shelves / category
   // tiles / brands / hero banners are all backed by the real backend now (product-sections,
@@ -464,32 +471,39 @@ export default function HomeScreen() {
           ))}
         </ScrollView>
 
-        {/* What buyers say */}
-        <View style={styles.plainSectionHeader}>
-          <Text style={styles.plainSectionTitle}>What buyers say</Text>
-          <Text style={styles.plainSectionSubtitle}>Real feedback from people who order every week</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-          {buyerReviews.map((r) => (
-            <View key={r.name} style={styles.reviewCard}>
-              <View style={styles.reviewStars}>
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <Text key={n} style={styles.reviewStar}>★</Text>
-                ))}
-              </View>
-              <Text style={styles.reviewQuote}>{r.quote}</Text>
-              <View style={styles.testimonialFooter}>
-                <View style={styles.reviewAvatar}>
-                  <Text style={styles.reviewAvatarText}>{r.initials}</Text>
-                </View>
-                <View style={styles.testimonialNameBlock}>
-                  <Text style={styles.testimonialName}>{r.name}</Text>
-                  <Text style={styles.testimonialTag}>{r.tag}</Text>
-                </View>
-              </View>
+        {/* What buyers say - real approved reviews (GET /store/reviews, see useRecentReviews),
+            replacing the old fully-invented testimonials. A rating-only review with no comment
+            has no quote to show here, so it's skipped; section hides entirely once loaded if
+            there's nothing to show, same convention as Buy again. */}
+        {reviewsWithComment.length > 0 && (
+          <>
+            <View style={styles.plainSectionHeader}>
+              <Text style={styles.plainSectionTitle}>What buyers say</Text>
+              <Text style={styles.plainSectionSubtitle}>Real feedback from people who order every week</Text>
             </View>
-          ))}
-        </ScrollView>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+              {reviewsWithComment.map((r) => (
+                <View key={r.id} style={styles.reviewCard}>
+                  <View style={styles.reviewStars}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Text key={n} style={[styles.reviewStar, n > r.rating && styles.reviewStarEmpty]}>★</Text>
+                    ))}
+                  </View>
+                  <Text style={styles.reviewQuote}>{r.comment}</Text>
+                  <View style={styles.testimonialFooter}>
+                    <View style={styles.reviewAvatar}>
+                      <Text style={styles.reviewAvatarText}>{r.customer_initials}</Text>
+                    </View>
+                    <View style={styles.testimonialNameBlock}>
+                      <Text style={styles.testimonialName}>{r.customer_name}</Text>
+                      {!!r.product_title && <Text style={styles.testimonialTag}>{r.product_title}</Text>}
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </>
+        )}
       </ScrollView>
 
       <VariantSheet visible={!!variantSheetProduct} product={variantSheetProduct} onClose={() => setVariantSheetProduct(null)} />
@@ -657,6 +671,7 @@ const styles = StyleSheet.create({
   reviewCard: { width: 252, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.sheet, padding: dsSpacing.lg },
   reviewStars: { flexDirection: 'row' },
   reviewStar: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.star },
+  reviewStarEmpty: { color: ds.line },
   reviewQuote: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink, marginTop: dsSpacing.md },
   reviewAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: ds.canvas, alignItems: 'center', justifyContent: 'center' },
   reviewAvatarText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
