@@ -46,6 +46,8 @@ import { syncCartQuantity } from '@/data/cartSync';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { fetchDeliveryEstimate } from '@/lib/medusaClient';
 import { useReviewSummaries, useProductReviews, summaryFor } from '@/data/reviewsApi';
+import { usePolicies } from '@/data/account-content';
+import { PolicySheet } from '@/components/shell/PolicySheet';
 import { timeAgo } from '@/utils/timeAgo';
 import type { Product } from '@/data/types';
 import type { RailProduct } from '@/data/home-content';
@@ -149,6 +151,8 @@ export default function ProductScreen() {
   // product's card already does).
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [variantSheetProduct, setVariantSheetProduct] = useState<Product | null>(null);
+  const { policies } = usePolicies();
+  const [policyKey, setPolicyKey] = useState<string | null>(null);
 
   // Real rating/review-count aggregate (apps/backend's review module, reviewsApi.ts) for this
   // product plus its similar/also-bought rails, fetched as one batch. isReal's own product.medusaId
@@ -231,8 +235,10 @@ export default function ProductScreen() {
   const goReviews = () => router.push(`${productHref(product)}/reviews`);
   const goCart = () => router.push('/cart');
   const goAccount = () => router.push('/account');
-  const openReturnPolicy = () => flash('Full policy details coming soon');
-  const openShippingPolicy = () => flash('Full policy details coming soon');
+  const openReturnPolicy = () => setPolicyKey('returns');
+  const openShippingPolicy = () => setPolicyKey('shipping');
+  const closePolicy = () => setPolicyKey(null);
+  const policy = policyKey ? policies.find((p) => p.key === policyKey) ?? null : null;
   const playBrandVideo = () => flash('Playing brand video');
 
   const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
@@ -787,6 +793,7 @@ export default function ProductScreen() {
       )}
 
       <VariantSheet visible={!!variantSheetProduct} product={variantSheetProduct} onClose={() => setVariantSheetProduct(null)} />
+      <PolicySheet policy={policy} onClose={closePolicy} />
     </View>
   );
 }
