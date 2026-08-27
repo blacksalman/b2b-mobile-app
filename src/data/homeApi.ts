@@ -217,7 +217,14 @@ export function useHomeApiData(): HomeApiData {
 function cheapestVariant(mp: MedusaProduct) {
   const priced = (mp.variants ?? []).filter((v) => v.calculated_price);
   if (!priced.length) return undefined;
-  return priced.reduce((min, v) =>
+  // Prefer the cheapest IN-STOCK variant so the card never shows "Out of stock" (and that
+  // variant's price) for a product that actually has a purchasable option - e.g. a 2-variant
+  // product where the cheaper pack is sold out but the pricier one isn't should still read as
+  // buyable. Only falls back to the cheapest overall if every variant is genuinely out of stock,
+  // same as before.
+  const inStockPriced = priced.filter((v) => isVariantInStock(v));
+  const pool = inStockPriced.length ? inStockPriced : priced;
+  return pool.reduce((min, v) =>
     v.calculated_price!.calculated_amount < min.calculated_price!.calculated_amount ? v : min
   );
 }
