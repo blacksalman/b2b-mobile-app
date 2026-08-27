@@ -30,6 +30,8 @@ import { RAZORPAY_KEY_ID } from '@/lib/medusaClient';
 import { fetchAddresses, type MedusaAddress } from '@/lib/medusaAddresses';
 import { money } from '@/utils/money';
 import { RazorpayCheckoutModal } from '@/components/composite/RazorpayCheckoutModal';
+import { PolicySheet } from '@/components/shell/PolicySheet';
+import { usePolicies } from '@/data/account-content';
 import type { RazorpayCheckoutParams } from '@/lib/razorpayCheckout';
 
 type PaymentStatus = 'processing' | 'success' | 'failed';
@@ -55,7 +57,9 @@ function sleep(ms: number): Promise<void> {
 export default function CheckoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { loggedIn, customer, clearCart, flash } = useAppState();
+  const { loggedIn, customer, clearCart } = useAppState();
+  const { policies } = usePolicies();
+  const [policyKey, setPolicyKey] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -236,8 +240,10 @@ export default function CheckoutScreen() {
     });
   };
 
-  const openReturnPolicy = () => flash('Return, Refund and Cancellation Policy');
-  const openShippingPolicy = () => flash('Shipping and Delivery Policy');
+  const openReturnPolicy = () => setPolicyKey('returns');
+  const openShippingPolicy = () => setPolicyKey('shipping');
+  const closePolicy = () => setPolicyKey(null);
+  const policy = policyKey ? policies.find((p) => p.key === policyKey) ?? null : null;
 
   if (!loggedIn) {
     return (
@@ -430,6 +436,8 @@ export default function CheckoutScreen() {
         onDismiss={onRazorpayDismiss}
         onError={onRazorpayError}
       />
+
+      <PolicySheet policy={policy} onClose={closePolicy} />
 
       {paymentSheetOpen && (
         <>

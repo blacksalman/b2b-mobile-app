@@ -115,6 +115,21 @@ export function fetchBanners(targetType: string, targetId?: string): Promise<{ b
   return storeFetch('/store/banners', { target_type: targetType, target_id: targetId });
 }
 
+export interface MedusaPolicy {
+  id: string;
+  key: string;
+  title: string;
+  body: string;
+  rank: number;
+}
+
+// Backs Account's "Policies"/"About" sections and Checkout's Return/Shipping popups (see
+// account-content.ts's usePolicies) - admin-managed content (Operations > Policies), replacing
+// what used to be a hardcoded POLICIES object in this file's own account-content.ts.
+export function fetchPolicies(): Promise<{ policies: MedusaPolicy[] }> {
+  return storeFetch('/store/policies');
+}
+
 export interface MedusaCollection {
   id: string;
   title: string;

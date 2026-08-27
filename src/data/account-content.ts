@@ -1,63 +1,51 @@
-// Ported from `Various Mobile App - Phone.dc.html`'s `POLICIES` const (source lines 2478-2485) — read
-// directly, in range. The DCLogic object that builds `profile`/`policyRows`/`addressCountLabel`/
-// `logout`/`goEditProfile` itself sits past this project's 256KB `get_file` cap (confirmed truncated
-// mid-object at source line 3143, right after `otpDigits`), so those five are inferred from adjacent,
-// in-range evidence rather than invented outright — see the call site (`account.tsx`) for exactly
-// which value is grounded vs. inferred.
-export interface PolicyEntry {
-  key: string;
-  title: string;
-  body: string;
+import { useEffect, useState } from 'react';
+import { fetchPolicies, type MedusaPolicy } from '@/lib/medusaClient';
+
+// Policy content (Terms & Conditions, Privacy Policy, Return/Refund/Cancellation,
+// Shipping & Delivery, Disclaimer, About Us, Contact Us) now lives in the backend
+// (Operations > Policies, GET /store/policies) instead of being hardcoded here - editable from
+// admin with no app update needed. `key` is the stable slug both account.tsx and checkout.tsx
+// wire specific popups to ('about'/'contact' render in their own "About" section on Account;
+// 'returns'/'shipping' back Checkout's two policy rows).
+export type PolicyEntry = MedusaPolicy;
+
+const ABOUT_CONTACT_KEYS = ['about', 'contact'];
+
+export interface PoliciesState {
+  loading: boolean;
+  policies: MedusaPolicy[];
 }
 
-export const POLICIES: Record<string, PolicyEntry> = {
-  'Terms & Conditions': {
-    key: 'Terms & Conditions',
-    title: 'Terms and Conditions',
-    body: 'Terms and Conditions for AyurvedaOne App\nLast Updated: 19/08/2026\n\nWelcome to the AyurvedaOne App, operated by Ayurveda One Private Limited ("AyurvedaOne", "we", "us", or "our").\n\nBy downloading, installing, accessing or using the App, you agree to these Terms and Conditions. If you do not agree with these Terms, please do not use the App.\n\nUse of the App\nYou agree to use the AyurvedaOne App only for lawful purposes and in accordance with your trade account agreement, including accurate order information and timely payment as per agreed terms.',
-  },
-  'Privacy Policy': {
-    key: 'Privacy Policy',
-    title: 'Privacy Policy',
-    body: 'Privacy Policy for AyurvedaOne App\nLast Updated: 19/08/2026\n\nWe collect account, order and delivery information to process your wholesale orders and maintain your trade account.\n\nYour data is never sold to third parties. It is used only to fulfil orders, manage invoicing, and improve our catalogue and service for your business.',
-  },
-  'Return, Refund and Cancellation Policy': {
-    key: 'Return, Refund and Cancellation Policy',
-    title: 'Return, Refund & Cancellation',
-    body: 'Eligible returns are accepted within 10 days of delivery for unused, unopened products in original packaging.\n\nOrders may be cancelled before dispatch from the Orders section. Approved refunds or replacements are processed within 5–7 business days after inspection of the returned carton.',
-  },
-  'Shipping and Delivery Policy': {
-    key: 'Shipping and Delivery Policy',
-    title: 'Shipping & Delivery',
-    body: 'Orders are generally delivered within 2–3 business days, with shipping charges shown at checkout.\n\nFree delivery applies on eligible orders above ₹5,000. Liquid products or remote locations may take slightly longer to dispatch.',
-  },
-  Disclaimer: {
-    key: 'Disclaimer',
-    title: 'Disclaimer',
-    body: 'Product information on this app is provided for trade reference only and does not replace professional medical advice.\n\nAyurvedaOne is not liable for misuse of products outside their intended classical indications. Always verify batch and licensing details before resale.',
-  },
-  'About Us': {
-    key: 'About Us',
-    title: 'About Us',
-    body: 'AyurvedaOne is a B2B wholesale platform connecting pharmacies, clinics and wellness retailers with GMP-certified Ayurvedic manufacturers.\n\nWe work with verified brands to bring classical formulations, tailas, churna and rasayana products to your business with transparent trade pricing.',
-  },
-  'Contact Us': {
-    key: 'Contact Us',
-    title: 'Contact Us',
-    body: 'Need help with an order or your account?\n\nEmail: support@ayurvedaone.in\nPhone: +91 80 4712 5566\nHours: Mon–Sat, 9am – 7pm IST',
-  },
-};
+export function usePolicies(): PoliciesState {
+  const [policies, setPolicies] = useState<MedusaPolicy[]>([]);
+  const [loading, setLoading] = useState(true);
 
-// The 5 rows the Account screen's `policyRows` list renders (hint-placeholder-count="5" in the
-// source markup) — every POLICIES key except 'About Us'/'Contact Us', which the screen renders as its
-// own separate "About" section with dedicated openAbout/openContact handlers instead.
-export const POLICY_ROW_KEYS = [
-  'Terms & Conditions',
-  'Privacy Policy',
-  'Return, Refund and Cancellation Policy',
-  'Shipping and Delivery Policy',
-  'Disclaimer',
-] as const;
+  useEffect(() => {
+    let cancelled = false;
+    fetchPolicies()
+      .then((d) => {
+        if (!cancelled) setPolicies(d.policies);
+      })
+      .catch(() => {
+        // Policies sections just stay empty - not worth surfacing.
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { loading, policies };
+}
+
+// The rows Account's "Policies" section renders - everything except about/contact, which render
+// in their own "About" section instead (see AboutGroup in account.tsx). Already rank-ordered by
+// the backend.
+export function policyRows(policies: MedusaPolicy[]): MedusaPolicy[] {
+  return policies.filter((p) => !ABOUT_CONTACT_KEYS.includes(p.key));
+}
 
 // Resolved: `s.addresses` (various-mobile-app-phone.dc.html lines 2540-2543) is in range, not
 // truncated — read directly, not inferred. Two seeded addresses, both for the same contact ('Tom',

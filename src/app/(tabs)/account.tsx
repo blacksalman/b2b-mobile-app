@@ -1,11 +1,10 @@
 import React, { useCallback, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import {
   ChevronRightIcon,
-  CloseIcon,
   ContactIcon,
   EditPencilIcon,
   InfoCircleIcon,
@@ -16,8 +15,9 @@ import {
   SmallBackChevronIcon,
 } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
-import { POLICIES, POLICY_ROW_KEYS, addressCountLabel } from '@/data/account-content';
+import { usePolicies, policyRows, addressCountLabel, type PolicyEntry } from '@/data/account-content';
 import { fetchAddresses } from '@/lib/medusaAddresses';
+import { PolicySheet } from '@/components/shell/PolicySheet';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, the
 // `isAccount` block, screen_Account.html). This is a first build, not a migration — the old
@@ -39,6 +39,7 @@ export default function AccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { loggedIn, customer, logoutUser } = useAppState();
+  const { policies } = usePolicies();
   const [policyKey, setPolicyKey] = useState<string | null>(null);
   const [addressCount, setAddressCount] = useState(0);
 
@@ -75,7 +76,7 @@ export default function AccountScreen() {
   const openPolicy = (key: string) => setPolicyKey(key);
   const closePolicy = () => setPolicyKey(null);
 
-  const policy = policyKey ? POLICIES[policyKey] : null;
+  const policy = policyKey ? policies.find((p) => p.key === policyKey) ?? null : null;
 
   return (
     <View style={styles.screen}>
@@ -102,8 +103,8 @@ export default function AccountScreen() {
               </Pressable>
             </View>
 
-            <PolicyGroup title="Policies" onOpen={openPolicy} />
-            <AboutGroup onOpenAbout={() => openPolicy('About Us')} onOpenContact={() => openPolicy('Contact Us')} />
+            <PolicyGroup title="Policies" rows={policyRows(policies)} onOpen={openPolicy} />
+            <AboutGroup onOpenAbout={() => openPolicy('about')} onOpenContact={() => openPolicy('contact')} />
             <Footer />
           </>
         ) : (
@@ -139,8 +140,8 @@ export default function AccountScreen() {
               </Pressable>
             </View>
 
-            <PolicyGroup title="Policies" onOpen={openPolicy} />
-            <AboutGroup onOpenAbout={() => openPolicy('About Us')} onOpenContact={() => openPolicy('Contact Us')} />
+            <PolicyGroup title="Policies" rows={policyRows(policies)} onOpen={openPolicy} />
+            <AboutGroup onOpenAbout={() => openPolicy('about')} onOpenContact={() => openPolicy('contact')} />
 
             <Pressable onPress={logout} style={styles.logoutButton}>
               <LogoutIcon size={15} color={ds.dangerInk} />
@@ -151,49 +152,27 @@ export default function AccountScreen() {
         )}
       </ScrollView>
 
-      <Modal visible={!!policy} transparent animationType="slide" onRequestClose={closePolicy}>
-        <Pressable style={styles.overlay} onPress={closePolicy} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom }]}>
-          <View style={styles.grabberRow}>
-            <View style={styles.grabber} />
-          </View>
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle} numberOfLines={1}>
-              {policy?.title}
-            </Text>
-            <Pressable onPress={closePolicy} style={styles.roundButton} hitSlop={4}>
-              <CloseIcon size={14} color={ds.ink} strokeWidth={2.2} />
-            </Pressable>
-          </View>
-          <ScrollView style={styles.sheetBody} contentContainerStyle={styles.sheetBodyContent}>
-            <Text style={styles.sheetBodyText}>{policy?.body}</Text>
-          </ScrollView>
-          <View style={styles.sheetFooter}>
-            <Pressable onPress={closePolicy} style={styles.sheetCloseButton}>
-              <Text style={styles.sheetCloseButtonText}>Close</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <PolicySheet policy={policy} onClose={closePolicy} />
     </View>
   );
 }
 
-const PolicyGroup = React.memo(function PolicyGroup({ title, onOpen }: { title: string; onOpen: (key: string) => void }) {
+const PolicyGroup = React.memo(function PolicyGroup({ title, rows, onOpen }: { title: string; rows: PolicyEntry[]; onOpen: (key: string) => void }) {
+  if (!rows.length) return null;
   return (
     <>
       <Text style={styles.sectionTitle}>{title}</Text>
       <View style={styles.rowsCard}>
-        {POLICY_ROW_KEYS.map((key, i) => (
+        {rows.map((row, i) => (
           <Pressable
-            key={key}
-            onPress={() => onOpen(key)}
-            style={[styles.row, i === POLICY_ROW_KEYS.length - 1 && styles.rowLast]}
+            key={row.key}
+            onPress={() => onOpen(row.key)}
+            style={[styles.row, i === rows.length - 1 && styles.rowLast]}
           >
             <View style={styles.rowIcon}>
               <InfoCircleIcon size={17} color={ds.primaryInk} />
             </View>
-            <Text style={styles.rowText}>{POLICIES[key].title}</Text>
+            <Text style={styles.rowText}>{row.title}</Text>
             <ChevronRightIcon size={8} color={ds.ink2} strokeWidth={2} />
           </Pressable>
         ))}
@@ -382,48 +361,4 @@ const styles = StyleSheet.create({
 
   footerText: { ...dsType.meta, textAlign: 'center', marginTop: dsSpacing.lg },
   footerTextTight: { marginTop: 0 },
-
-  overlay: { flex: 1, backgroundColor: 'rgba(12,71,51,.45)' },
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    maxHeight: '80%',
-    backgroundColor: ds.surface,
-    borderTopLeftRadius: dsRadii.sheet,
-    borderTopRightRadius: dsRadii.sheet,
-    overflow: 'hidden',
-  },
-  grabberRow: { alignItems: 'center', paddingTop: dsSpacing.sm },
-  grabber: { width: 36, height: 4, borderRadius: dsRadii.pill, backgroundColor: ds.lineStrong },
-  sheetHeader: {
-    paddingHorizontal: dsSpacing.lg,
-    paddingTop: dsSpacing.sm,
-    paddingBottom: dsSpacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: dsSpacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: ds.line,
-  },
-  sheetTitle: { ...dsType.h2, flex: 1, minWidth: 0 },
-  sheetBody: { flexGrow: 0 },
-  sheetBodyContent: { padding: dsSpacing.lg },
-  sheetBodyText: { ...dsType.body, color: ds.ink2 },
-  sheetFooter: {
-    borderTopWidth: 1,
-    borderTopColor: ds.line,
-    padding: dsSpacing.md,
-    paddingHorizontal: dsSpacing.lg,
-  },
-  sheetCloseButton: {
-    height: 48,
-    borderRadius: dsRadii.button,
-    backgroundColor: ds.primaryStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetCloseButtonText: { ...dsType.title, color: ds.surface },
 });
