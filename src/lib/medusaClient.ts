@@ -91,12 +91,14 @@ export function fetchProductSections(): Promise<{ product_sections: MedusaProduc
   return storeFetch('/store/product-sections');
 }
 
+// metadata.image_url - set by the admin's Category Image widget (collection-image.tsx's category
+// counterpart) - null/absent for a category with no image uploaded yet.
 export interface MedusaCategorySection {
   id: string;
   slug: string;
   title: string;
   rank: number;
-  categories: { id: string; name: string; handle: string }[];
+  categories: { id: string; name: string; handle: string; metadata?: { image_url?: string | null } | null }[];
 }
 
 export function fetchCategorySections(slug?: string): Promise<{ category_sections: MedusaCategorySection[] }> {
@@ -130,10 +132,15 @@ export function fetchPolicies(): Promise<{ policies: MedusaPolicy[] }> {
   return storeFetch('/store/policies');
 }
 
+// metadata.image_url - set by the admin's Collection Image widget - null/absent for a collection
+// with no image uploaded yet. Only populated when the caller's route actually selects `metadata`
+// (brand-sections does; the plain /store/collections list below may or may not, depending on
+// Medusa's own default field set).
 export interface MedusaCollection {
   id: string;
   title: string;
   handle: string;
+  metadata?: { image_url?: string | null } | null;
 }
 
 export function fetchCollections(): Promise<{ collections: MedusaCollection[] }> {

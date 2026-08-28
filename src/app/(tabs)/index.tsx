@@ -179,9 +179,15 @@ export default function HomeScreen() {
         <View style={styles.prescriptionGrid}>
           {apiData.categoryTiles.map((g: ApiCategoryTile) => (
             <Pressable key={g.id} onPress={() => openCategory(g.id)} style={styles.prescriptionTile}>
-              <View style={[styles.prescriptionGlyphTile, { backgroundColor: g.tint }]}>
-                <Text style={styles.prescriptionGlyph}>{g.glyph}</Text>
-              </View>
+              {g.imageUrl ? (
+                <View style={styles.prescriptionGlyphTile}>
+                  <Image source={{ uri: g.imageUrl }} style={styles.prescriptionImage} contentFit="cover" />
+                </View>
+              ) : (
+                <View style={[styles.prescriptionGlyphTile, { backgroundColor: g.tint }]}>
+                  <Text style={styles.prescriptionGlyph}>{g.glyph}</Text>
+                </View>
+              )}
               <Text style={styles.prescriptionName}>{g.name}</Text>
             </Pressable>
           ))}
@@ -337,7 +343,11 @@ export default function HomeScreen() {
           {apiData.brands.map((b: ApiBrand) => (
             <Pressable key={b.id} onPress={() => openBrandListing(b)} style={styles.brandCard}>
               <View style={styles.brandImage}>
-                <Text style={styles.brandImageLabel}>store photo</Text>
+                {b.imageUrl ? (
+                  <Image source={{ uri: b.imageUrl }} style={styles.brandRealImage} contentFit="cover" />
+                ) : (
+                  <Text style={styles.brandImageLabel}>store photo</Text>
+                )}
                 <View style={styles.brandInitials}>
                   <Text style={styles.brandInitialsText}>{b.initials}</Text>
                 </View>
@@ -650,7 +660,8 @@ const styles = StyleSheet.create({
     paddingTop: dsSpacing.md,
   },
   prescriptionTile: { width: '31%', flexGrow: 1 },
-  prescriptionGlyphTile: { width: '100%', aspectRatio: 1, borderRadius: dsRadii.button, alignItems: 'center', justifyContent: 'center' },
+  prescriptionGlyphTile: { width: '100%', aspectRatio: 1, borderRadius: dsRadii.button, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  prescriptionImage: { width: '100%', height: '100%' },
   prescriptionGlyph: { fontFamily: dsFontFamily[700], fontSize: 22, lineHeight: 28, color: ds.primaryInk },
   prescriptionName: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, textAlign: 'center', marginTop: dsSpacing.sm },
 
@@ -734,6 +745,7 @@ const styles = StyleSheet.create({
   brandCard: { flex: 1, minWidth: 0, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, overflow: 'hidden', ...dsElevation.e1 },
   brandSkeletonCard: { flex: 1, minWidth: 0, height: 168, borderRadius: dsRadii.button },
   brandImage: { aspectRatio: 4 / 3, backgroundColor: ds.primarySoft, justifyContent: 'flex-end', padding: 8 },
+  brandRealImage: { ...StyleSheet.absoluteFillObject },
   brandImageLabel: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3 },
   brandInitials: { position: 'absolute', top: 8, left: 8, width: 32, height: 32, borderRadius: dsRadii.input, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },
   brandInitialsText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22, color: ds.primaryInk },

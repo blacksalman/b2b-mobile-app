@@ -49,6 +49,9 @@ export interface ApiCategoryTile {
   handle: string;
   glyph: string;
   tint: string;
+  // Set by the admin's Category Image widget (metadata.image_url) - null until an admin uploads
+  // one, in which case the tile shows this instead of the glyph/tint placeholder.
+  imageUrl: string | null;
 }
 
 export interface ApiBrand {
@@ -58,6 +61,9 @@ export interface ApiBrand {
   line: string;
   skus: number;
   tint: string;
+  // Set by the admin's Collection Image widget (metadata.image_url) - null until an admin
+  // uploads one, in which case the card shows this instead of the "store photo" placeholder.
+  imageUrl: string | null;
 }
 
 // Each section of Home's real content resolves and renders independently - no single "loading"
@@ -161,7 +167,13 @@ export function useHomeApiData(): HomeApiData {
       .then((res) => patch({ heroBanners: res.banners, heroBannersLoading: false }))
       .catch(() => patch({ heroBannersLoading: false, error: true }));
 
-    fetchCategorySections()
+    // "prescriptions-at-a-glance" - the admin-curated section backing THIS specific tile grid.
+    // Previously fetched with no slug filter at all, which returned EVERY category section
+    // (including "category-page", a separate section meant only for the Categories screen's own
+    // chip rail) and merged their categories together - Home ended up showing 8 tiles instead of
+    // the 6 actually curated for it, 2 of which ("Women's Health Concern", "Hair Health") were
+    // never meant to appear here.
+    fetchCategorySections('prescriptions-at-a-glance')
       .then((res) => {
         const categoryTiles: ApiCategoryTile[] = [];
         const seenCategoryIds = new Set<string>();
@@ -175,6 +187,7 @@ export function useHomeApiData(): HomeApiData {
               handle: cat.handle,
               glyph: CATEGORY_GLYPHS[categoryTiles.length % CATEGORY_GLYPHS.length],
               tint: CATEGORY_TINTS[categoryTiles.length % CATEGORY_TINTS.length],
+              imageUrl: cat.metadata?.image_url ?? null,
             });
           }
         }
@@ -196,6 +209,7 @@ export function useHomeApiData(): HomeApiData {
           line: 'Direct trade partner',
           skus: brandCounts[c.id] ?? 0,
           tint: BRAND_TINTS[i % BRAND_TINTS.length],
+          imageUrl: c.metadata?.image_url ?? null,
         }));
         patch({ brands, brandsLoading: false });
       })
