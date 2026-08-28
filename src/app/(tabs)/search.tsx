@@ -1,10 +1,11 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing } from '@/theme';
 import { BackChevronIcon, CloseIcon, SearchIcon, MicIcon } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
+import { Skeleton } from '@/components/primitives/Skeleton';
 import { VariantSheet } from '@/components/shell/VariantSheet';
 import { useAppState } from '@/state/AppStateContext';
 import { useProductSearch } from '@/data/searchApi';
@@ -46,7 +47,9 @@ export default function SearchScreen() {
 
   // Real full-catalog search (GET /store/products-search) - see useProductSearch for why this
   // is a two-step fetch (search for the ranked id list, then hydrate price/collection/category
-  // data), debounced 350ms so every keystroke doesn't fire a request.
+  // data), debounced 350ms so every keystroke doesn't fire a request. Real pagination
+  // (PAGE_LIMIT per page, more via loadMore on scroll) rather than ever fetching every match at
+  // once - a common term can match hundreds of products across this ~10k catalog.
   const search = useProductSearch(query);
   const reviewSummaries = useReviewSummaries(useMemo(() => search.results.map((p) => p.id), [search.results]));
   const results = useMemo(
@@ -70,65 +73,76 @@ export default function SearchScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* ScrollView's default keyboardShouldPersistTaps ("never") swallows the FIRST tap on
-          anything inside it while the keyboard is open - purely to dismiss the keyboard,
-          without the tapped element's own onPress firing at all. That's exactly why the back
-          button (and everything else here - recent chips, product cards) needed two taps
-          whenever the keyboard was up. "handled" lets a tap on any actual touchable register
-          normally; only tapping truly empty space still dismisses the keyboard. */}
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}>
-        <View style={styles.topRow}>
-          <Pressable onPress={() => router.push('/')} style={styles.backButton} hitSlop={8}>
-            <BackChevronIcon size={20} color={ds.ink} />
-          </Pressable>
-          <View style={styles.searchInput}>
-            <SearchIcon size={17} color={ds.primaryInk} />
-            <TextInput
-              ref={inputRef}
-              value={query}
-              onChangeText={setQuery}
-              onSubmitEditing={commitSearch}
-              returnKeyType="search"
-              placeholder="Search SKUs, brands, cases"
-              placeholderTextColor={ds.ink3}
-              style={styles.input}
-            />
-            {!!query && (
-              <Pressable onPress={() => setQuery('')} style={styles.clearButton} hitSlop={8}>
-                <CloseIcon size={10} color={ds.ink2} />
-              </Pressable>
-            )}
-          </View>
-        </View>
-
-        {listening && (
-          <View style={styles.listeningPanel}>
-            <View style={styles.micCircle}>
-              <MicIcon size={24} color={ds.surface} />
-            </View>
-            <Text style={styles.listeningTitle}>Listening…</Text>
-            <Text style={styles.listeningSub}>Try &quot;two cases of lamb chops&quot;</Text>
-            <Pressable onPress={() => setQuery('lamb')} style={styles.useButton}>
-              <Text style={styles.useButtonText}>Use &quot;lamb&quot;</Text>
+      <View style={[styles.topRow, { paddingTop: insets.top + 12 }]}>
+        <Pressable onPress={() => router.push('/')} style={styles.backButton} hitSlop={8}>
+          <BackChevronIcon size={20} color={ds.ink} />
+        </Pressable>
+        <View style={styles.searchInput}>
+          <SearchIcon size={17} color={ds.primaryInk} />
+          <TextInput
+            ref={inputRef}
+            value={query}
+            onChangeText={setQuery}
+            onSubmitEditing={commitSearch}
+            returnKeyType="search"
+            placeholder="Search SKUs, brands, cases"
+            placeholderTextColor={ds.ink3}
+            style={styles.input}
+          />
+          {!!query && (
+            <Pressable onPress={() => setQuery('')} style={styles.clearButton} hitSlop={8}>
+              <CloseIcon size={10} color={ds.ink2} />
             </Pressable>
-          </View>
-        )}
+          )}
+        </View>
+      </View>
 
-        {!hasQuery && recentSearches.length > 0 && (
-          <>
-            <Text style={styles.sectionLabel}>RECENT</Text>
-            <View style={styles.recentChips}>
-              {recentSearches.map((q) => (
-                <Pressable key={q} onPress={() => openRecentSearch(q)} style={styles.recentChip}>
-                  <Text style={styles.recentChipText}>{q}</Text>
-                </Pressable>
-              ))}
+      {!hasQuery ? (
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+          {listening && (
+            <View style={styles.listeningPanel}>
+              <View style={styles.micCircle}>
+                <MicIcon size={24} color={ds.surface} />
+              </View>
+              <Text style={styles.listeningTitle}>Listening…</Text>
+              <Text style={styles.listeningSub}>Try &quot;two cases of lamb chops&quot;</Text>
+              <Pressable onPress={() => setQuery('lamb')} style={styles.useButton}>
+                <Text style={styles.useButtonText}>Use &quot;lamb&quot;</Text>
+              </Pressable>
             </View>
-          </>
-        )}
+          )}
 
-        {hasQuery && (
-          <>
+          {recentSearches.length > 0 && (
+            <>
+              <Text style={styles.sectionLabel}>RECENT</Text>
+              <View style={styles.recentChips}>
+                {recentSearches.map((q) => (
+                  <Pressable key={q} onPress={() => openRecentSearch(q)} style={styles.recentChip}>
+                    <Text style={styles.recentChipText}>{q}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
+        </ScrollView>
+      ) : (
+        <FlatList
+          keyboardShouldPersistTaps="handled"
+          style={styles.body}
+          contentContainerStyle={styles.content}
+          data={results}
+          keyExtractor={(p) => String(p.id)}
+          numColumns={2}
+          columnWrapperStyle={styles.gridRow}
+          // Real lazy loading: only PAGE_LIMIT products are ever fetched at a time
+          // (useProductSearch/searchApi.ts) - scrolling near the bottom fetches the next page
+          // instead of ever holding every match (potentially hundreds, across this ~10k
+          // catalog) in memory at once.
+          onEndReachedThreshold={0.5}
+          onEndReached={() => {
+            if (search.hasMore) search.loadMore();
+          }}
+          ListHeaderComponent={
             <Text style={styles.sectionLabel}>
               {search.loading
                 ? 'SEARCHING…'
@@ -136,37 +150,66 @@ export default function SearchScreen() {
                   ? 'SEARCH FAILED'
                   : `RESULTS FOR "${query}" (${search.count})`}
             </Text>
-            {!search.loading && !search.error && results.length === 0 && (
+          }
+          ListEmptyComponent={
+            search.loading ? (
+              <SearchResultsSkeleton />
+            ) : !search.error ? (
               <Text style={styles.emptyText}>No products match &quot;{query}&quot;.</Text>
-            )}
-            <View style={styles.grid}>
-              {results.map((p) => (
-                <DsProductCard
-                  key={p.id}
-                  product={p}
-                  width="48%"
-                  onOpen={() => openProduct(p)}
-                  onAdd={() => addApiProduct(p)}
-                  onInc={() => incApiProduct(p)}
-                  onDec={() => decApiProduct(p)}
-                  onLogin={goLogin}
-                  onSelectOption={() => setVariantSheetProduct(p)}
-                />
-              ))}
-            </View>
-          </>
-        )}
-      </ScrollView>
+            ) : null
+          }
+          ListFooterComponent={
+            search.loadingMore ? (
+              <View style={styles.loadingMoreState}>
+                <ActivityIndicator color={ds.primaryInk} />
+              </View>
+            ) : null
+          }
+          renderItem={({ item: p }) => (
+            <DsProductCard
+              product={p}
+              width="48%"
+              onOpen={() => openProduct(p)}
+              onAdd={() => addApiProduct(p)}
+              onInc={() => incApiProduct(p)}
+              onDec={() => decApiProduct(p)}
+              onLogin={goLogin}
+              onSelectOption={() => setVariantSheetProduct(p)}
+            />
+          )}
+        />
+      )}
 
       <VariantSheet visible={!!variantSheetProduct} product={variantSheetProduct} onClose={() => setVariantSheetProduct(null)} />
     </View>
   );
 }
 
+// Reserves the results grid's real layout (2-column, matching DsProductCard at width="48%")
+// while the search is still in flight - shown only on the very first page of a search (loading),
+// not for loadMore (which gets its own small footer spinner instead, same convention as
+// categoriesApi.ts's useCategoryProducts).
+const SearchResultsSkeleton = React.memo(function SearchResultsSkeleton() {
+  return (
+    <View style={styles.skeletonGrid}>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Skeleton key={i} width="48%" height={230} radius={dsRadii.sheet} />
+      ))}
+    </View>
+  );
+});
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: ds.canvas },
   content: { paddingHorizontal: dsSpacing.lg, paddingBottom: dsSpacing.xl },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.sm },
+  topRow: {
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: dsSpacing.sm,
+    paddingHorizontal: dsSpacing.lg,
+    paddingBottom: dsSpacing.md,
+  },
   backButton: { width: 40, height: 40, borderRadius: dsRadii.pill, alignItems: 'center', justifyContent: 'center' },
   searchInput: {
     flex: 1,
@@ -198,6 +241,9 @@ const styles = StyleSheet.create({
   recentChips: { flexDirection: 'row', flexWrap: 'wrap', gap: dsSpacing.sm, marginTop: dsSpacing.md },
   recentChip: { backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.pill, paddingHorizontal: dsSpacing.md, paddingVertical: dsSpacing.sm },
   recentChipText: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink2 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: dsSpacing.md, marginTop: dsSpacing.md },
+  body: { flex: 1 },
+  gridRow: { gap: dsSpacing.md, marginTop: dsSpacing.md },
+  skeletonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: dsSpacing.md, marginTop: dsSpacing.md },
   emptyText: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink3, marginTop: dsSpacing.md },
+  loadingMoreState: { paddingVertical: dsSpacing.lg, alignItems: 'center' },
 });
