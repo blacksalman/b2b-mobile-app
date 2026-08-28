@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing } from '@/theme';
 import { CheckThinIcon, OrderBoxIcon } from '@/icons';
 import { money } from '@/utils/money';
+import { fetchDeliveryEstimate } from '@/lib/medusaClient';
+
+const FALLBACK_DELIVERY_ESTIMATE = '2–3 business days';
 
 // Built against the new AyurvedaOne design system (screen_OrderConfirmed.html, isOrderConfirmed
 // block), reached from Checkout's real order-placed sheet. `orderId`/`displayId`/`amount` are the
@@ -17,9 +20,34 @@ import { money } from '@/utils/money';
 export default function OrderConfirmedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { orderId, displayId, amount } = useLocalSearchParams<{ orderId?: string; displayId?: string; amount?: string }>();
+  const { orderId, displayId, amount, pincode } = useLocalSearchParams<{
+    orderId?: string;
+    displayId?: string;
+    amount?: string;
+    pincode?: string;
+  }>();
   const amountLabel = amount ?? money(0);
   const displayIdLabel = displayId ?? '';
+
+  // Real Delhivery TAT lookup for the shipping pincode Checkout just used - same endpoint/logic
+  // as the product page's pincode checker. Falls back to the old static copy on any failure
+  // (missing pincode, unserviceable, API/config error) so this screen never shows a blank or a
+  // confusing "not serviceable" message for an order that was already placed successfully.
+  const [deliveryEstimate, setDeliveryEstimate] = useState(FALLBACK_DELIVERY_ESTIMATE);
+  useEffect(() => {
+    if (!pincode) return;
+    let cancelled = false;
+    fetchDeliveryEstimate(pincode)
+      .then((estimate) => {
+        if (!cancelled && estimate.success && estimate.deliveryDateFormatted) {
+          setDeliveryEstimate(estimate.deliveryDateFormatted);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [pincode]);
 
   const viewOrder = () => {
     if (orderId) router.push(`/orders/${orderId}`);
@@ -66,7 +94,7 @@ export default function OrderConfirmedScreen() {
               </View>
               <View style={styles.summaryCell}>
                 <Text style={styles.summaryLabel}>Est. delivery</Text>
-                <Text style={styles.summaryValue}>2–3 business days</Text>
+                <Text style={styles.summaryValue}>{deliveryEstimate}</Text>
               </View>
             </View>
           </View>

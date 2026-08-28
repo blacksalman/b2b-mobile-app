@@ -236,7 +236,12 @@ export default function CheckoutScreen() {
     if (!placedOrder) return;
     router.push({
       pathname: '/order-confirmed',
-      params: { orderId: placedOrder.id, displayId: String(placedOrder.display_id), amount: money(placedOrder.total) },
+      params: {
+        orderId: placedOrder.id,
+        displayId: String(placedOrder.display_id),
+        amount: money(placedOrder.total),
+        pincode: address?.postal_code ?? '',
+      },
     });
   };
 
