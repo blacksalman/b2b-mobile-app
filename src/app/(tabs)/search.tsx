@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing } from '@/theme';
 import { BackChevronIcon, CloseIcon, SearchIcon, MicIcon } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
-import { Skeleton } from '@/components/primitives/Skeleton';
+import { ProductGridSkeleton } from '@/components/ds/ProductGridSkeleton';
 import { VariantSheet } from '@/components/shell/VariantSheet';
 import { useAppState } from '@/state/AppStateContext';
 import { useProductSearch } from '@/data/searchApi';
@@ -153,7 +153,7 @@ export default function SearchScreen() {
           }
           ListEmptyComponent={
             search.loading ? (
-              <SearchResultsSkeleton />
+              <ProductGridSkeleton />
             ) : !search.error ? (
               <Text style={styles.emptyText}>No products match &quot;{query}&quot;.</Text>
             ) : null
@@ -184,20 +184,6 @@ export default function SearchScreen() {
     </View>
   );
 }
-
-// Reserves the results grid's real layout (2-column, matching DsProductCard at width="48%")
-// while the search is still in flight - shown only on the very first page of a search (loading),
-// not for loadMore (which gets its own small footer spinner instead, same convention as
-// categoriesApi.ts's useCategoryProducts).
-const SearchResultsSkeleton = React.memo(function SearchResultsSkeleton() {
-  return (
-    <View style={styles.skeletonGrid}>
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} width="48%" height={230} radius={dsRadii.sheet} />
-      ))}
-    </View>
-  );
-});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: ds.canvas },
@@ -243,7 +229,6 @@ const styles = StyleSheet.create({
   recentChipText: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink2 },
   body: { flex: 1 },
   gridRow: { gap: dsSpacing.md, marginTop: dsSpacing.md },
-  skeletonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: dsSpacing.md, marginTop: dsSpacing.md },
   emptyText: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink3, marginTop: dsSpacing.md },
   loadingMoreState: { paddingVertical: dsSpacing.lg, alignItems: 'center' },
 });

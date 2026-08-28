@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CloseIcon, FilterIcon, PackageIcon, SearchIcon, SmallBackChevronIcon } from '@/icons';
 import { DsProductCard } from '@/components/ds/DsProductCard';
+import { ProductGridSkeleton } from '@/components/ds/ProductGridSkeleton';
 import { FilterSheet } from '@/components/shell/FilterSheet';
 import { VariantSheet } from '@/components/shell/VariantSheet';
 import { countNonSortFilters } from '@/data/categories-content';
@@ -217,9 +218,7 @@ export default function CategoriesScreen() {
         }
         ListEmptyComponent={
           productsState.loading ? (
-            <View style={styles.loadingState}>
-              <ActivityIndicator color={ds.primaryInk} />
-            </View>
+            <ProductGridSkeleton style={styles.skeletonGrid} />
           ) : catEmpty ? (
             <View style={styles.emptyState}>
               <View style={styles.emptyIcon}>
@@ -333,7 +332,7 @@ const styles = StyleSheet.create({
   railChipText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22 },
   railChipTextActive: { color: '#0C4733' },
   railChipTextInactive: { color: '#586360' },
-  loadingState: { paddingTop: dsSpacing.xl + dsSpacing.lg, alignItems: 'center' },
+  skeletonGrid: { paddingHorizontal: dsSpacing.lg },
   body: { flex: 1 },
   bodyContent: { paddingTop: dsSpacing.md, paddingBottom: dsSpacing.xl },
   pillsRow: { flexGrow: 0 },
