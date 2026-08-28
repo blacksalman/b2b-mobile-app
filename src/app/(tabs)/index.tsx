@@ -11,10 +11,9 @@ import { Skeleton } from '@/components/primitives/Skeleton';
 import { MarginTrendIcon, DeliveryBoxIcon, ShieldCheckIcon, ChevronRightIcon, ConcernLeafIcon, CartIcon, TrashIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import {
-  doctorTalks,
   promoBanners,
 } from '@/data/home-content';
-import { useHomeApiData, toRailProduct, type ApiCategoryTile, type ApiBrand } from '@/data/homeApi';
+import { useHomeApiData, useDoctorTalks, toRailProduct, type ApiCategoryTile, type ApiBrand } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { useBuyAgainProducts } from '@/data/ordersApi';
 import { useReviewSummaries, useRecentReviews } from '@/data/reviewsApi';
@@ -50,6 +49,10 @@ export default function HomeScreen() {
     () => recentReviews.reviews.filter((r) => !!r.comment),
     [recentReviews.reviews]
   );
+
+  // Real testimonials (Operations > Doctor's Talk in admin) - replaces the old hardcoded
+  // doctorTalks array.
+  const doctorTalksApi = useDoctorTalks();
 
   // Best sellers / New arrivals / Featured / Fast-moving offers / Concern shelves / category
   // tiles / brands / hero banners are all backed by the real backend now (product-sections,
@@ -521,28 +524,48 @@ export default function HomeScreen() {
           </View>
         ))}
 
-        {/* Doctor's Talk */}
-        <View style={styles.plainSectionHeader}>
-          <Text style={styles.plainSectionTitle}>Doctor&apos;s Talk</Text>
-          <Text style={styles.plainSectionSubtitle}>Trusted by practitioners who recommend us to their patients</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-          {doctorTalks.map((d) => (
-            <View key={d.name} style={styles.doctorCard}>
-              <Text style={styles.quoteGlyph}>“</Text>
-              <Text style={styles.doctorQuote}>{d.quote}</Text>
-              <View style={styles.testimonialFooter}>
-                <View style={styles.doctorAvatar}>
-                  <Text style={styles.doctorAvatarText}>{d.initials}</Text>
-                </View>
-                <View style={styles.testimonialNameBlock}>
-                  <Text style={styles.testimonialName}>{d.name}</Text>
-                  <Text style={styles.testimonialTag}>{d.title}</Text>
-                </View>
-              </View>
+        {/* Doctor's Talk - real testimonials (Operations > Doctor's Talk in admin, see
+            useDoctorTalks), replacing the old hardcoded doctorTalks array. Section hides
+            entirely once loaded if there's nothing configured yet, same convention as Buy
+            again/What buyers say. */}
+        {doctorTalksApi.loading ? (
+          <>
+            <View style={styles.plainSectionHeader}>
+              <Text style={styles.plainSectionTitle}>Doctor&apos;s Talk</Text>
+              <Text style={styles.plainSectionSubtitle}>Trusted by practitioners who recommend us to their patients</Text>
             </View>
-          ))}
-        </ScrollView>
+            <View style={styles.rail}>
+              <Skeleton width={272} height={190} radius={dsRadii.sheet} />
+              <Skeleton width={272} height={190} radius={dsRadii.sheet} />
+            </View>
+          </>
+        ) : (
+          doctorTalksApi.doctorTalks.length > 0 && (
+            <>
+              <View style={styles.plainSectionHeader}>
+                <Text style={styles.plainSectionTitle}>Doctor&apos;s Talk</Text>
+                <Text style={styles.plainSectionSubtitle}>Trusted by practitioners who recommend us to their patients</Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+                {doctorTalksApi.doctorTalks.map((d) => (
+                  <View key={d.id} style={styles.doctorCard}>
+                    <Text style={styles.quoteGlyph}>“</Text>
+                    <Text style={styles.doctorQuote}>{d.quote}</Text>
+                    <View style={styles.testimonialFooter}>
+                      <View style={styles.doctorAvatar}>
+                        <Text style={styles.doctorAvatarText}>{d.initials}</Text>
+                      </View>
+                      <View style={styles.testimonialNameBlock}>
+                        <Text style={styles.testimonialName}>{d.name}</Text>
+                        <Text style={styles.testimonialTag}>{d.title}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            </>
+          )
+        )}
 
         {/* What buyers say - real approved reviews (GET /store/reviews, see useRecentReviews),
             replacing the old fully-invented testimonials. A rating-only review with no comment

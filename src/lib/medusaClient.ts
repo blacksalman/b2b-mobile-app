@@ -132,6 +132,21 @@ export function fetchPolicies(): Promise<{ policies: MedusaPolicy[] }> {
   return storeFetch('/store/policies');
 }
 
+export interface MedusaDoctorTalk {
+  id: string;
+  quote: string;
+  name: string;
+  title: string;
+  initials: string;
+  rank: number;
+}
+
+// Backs Home's "Doctor's Talk" rail - admin-managed content (Operations > Doctor's Talk),
+// replacing what used to be a hardcoded doctorTalks array in home-content.ts.
+export function fetchDoctorTalks(): Promise<{ doctor_talks: MedusaDoctorTalk[] }> {
+  return storeFetch('/store/doctor-talks');
+}
+
 // metadata.image_url - set by the admin's Collection Image widget - null/absent for a collection
 // with no image uploaded yet. Only populated when the caller's route actually selects `metadata`
 // (brand-sections does; the plain /store/collections list below may or may not, depending on

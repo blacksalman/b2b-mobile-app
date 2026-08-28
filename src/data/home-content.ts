@@ -204,12 +204,8 @@ export const brands = [
   },
 ].map((b) => ({ ...b, metaLine: `${b.margin} avg margin · ${b.lead} delivery` }));
 
-// --- Doctor's Talk (line 2844) — unchanged content from the previous pull. ---
-export const doctorTalks = [
-  { quote: 'We recommend this platform to every clinic that needs verified supply chains and consistent batch quality.', name: 'Dr. Anita Rao', title: 'Clinical Nutritionist, 14 yrs practice', initials: 'AR' },
-  { quote: 'Traceability on every carton means I can vouch for what my patients are buying, batch after batch.', name: 'Dr. Karan Mehta', title: 'Ayurvedic Physician', initials: 'KM' },
-  { quote: 'Consistent supply and clear labeling — it is rare to find a wholesale partner this reliable.', name: 'Dr. Leela Nair', title: 'Dietitian & Wellness Consultant', initials: 'LN' },
-];
+// "Doctor's Talk" no longer uses mock data - see homeApi.ts's useDoctorTalks
+// (GET /store/doctor-talks, admin-managed via Operations > Doctor's Talk).
 
 // "What buyers say" no longer uses mock data - see reviewsApi.ts's useRecentReviews
 // (GET /store/reviews, real approved reviews) and index.tsx's reviewsWithComment.

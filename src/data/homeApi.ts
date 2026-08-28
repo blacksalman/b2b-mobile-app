@@ -6,11 +6,13 @@ import {
   fetchBrandSections,
   fetchCollectionProductCounts,
   fetchProductsByIds,
+  fetchDoctorTalks,
   searchProducts,
   storeFetch,
   type MedusaProduct,
   type MedusaBanner,
   type MedusaVariant,
+  type MedusaDoctorTalk,
 } from '@/lib/medusaClient';
 import { decorateProduct, discountBadge, marginOf } from './decorateProduct';
 import { registerApiProductVariant } from './cartSync';
@@ -479,4 +481,33 @@ export function toRailProduct(mp: MedusaProduct, cart: CartState, loggedIn: bool
     discount: discountBadge(product),
     reviewCount: summary.count,
   };
+}
+
+export interface DoctorTalksState {
+  loading: boolean;
+  doctorTalks: MedusaDoctorTalk[];
+}
+
+// Real testimonials (Operations > Doctor's Talk in admin, GET /store/doctor-talks) - backs
+// Home's "Doctor's Talk" rail, replacing what used to be a hardcoded doctorTalks array in
+// home-content.ts. Independent of useHomeApiData - same "each section fetches on its own" reason
+// as useBuyAgainProducts/useRecentReviews, not gated on or gating any other section.
+export function useDoctorTalks(): DoctorTalksState {
+  const [state, setState] = useState<DoctorTalksState>({ loading: true, doctorTalks: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchDoctorTalks()
+      .then((data) => {
+        if (!cancelled) setState({ loading: false, doctorTalks: data.doctor_talks });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ loading: false, doctorTalks: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return state;
 }
