@@ -48,7 +48,22 @@ export default function AuthRegisterScreen() {
   const openPolicyTerms = () => flash('Terms of Service');
   const openPolicyPrivacy = () => flash('Privacy Policy');
   const submitRegistration = async () => {
-    if (!phone || !regName.trim() || !regEmail.trim() || submitting) return;
+    if (submitting) return;
+    if (!phone) {
+      flash('Missing phone number - please restart login');
+      return;
+    }
+    if (!regName.trim()) {
+      flash('Enter your full name');
+      return;
+    }
+    // Same simple @/domain format check standard across web/mobile forms - a non-empty string
+    // like "asdf" previously passed this screen's only check (non-empty) with no client-side
+    // rejection at all.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())) {
+      flash('Enter a valid email address');
+      return;
+    }
     setSubmitting(true);
     const [firstName, ...rest] = regName.trim().split(/\s+/);
     const lastName = rest.join(' ');

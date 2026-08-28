@@ -31,7 +31,14 @@ export default function AuthPhoneScreen() {
   const goAccount = () => router.push('/account');
   const onAuthPhone = (v: string) => setAuthPhone(v.replace(/\D/g, '').slice(0, 10));
   const submitPhone = async () => {
-    if (authPhone.length !== 10 || sending) return;
+    if (sending) return;
+    // Same real Indian-mobile pattern edit-profile.tsx already enforces (must start 6-9, not
+    // just "any 10 digits") - previously this screen only checked length, so an invalid number
+    // like "0123456789" would reach the OTP-send API with no client-side rejection at all.
+    if (!/^[6-9]\d{9}$/.test(authPhone)) {
+      flash('Enter a valid 10-digit mobile number');
+      return;
+    }
     setSending(true);
     try {
       await sendOtp(toE164(authPhone));
