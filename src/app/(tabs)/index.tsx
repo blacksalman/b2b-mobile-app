@@ -7,6 +7,7 @@ import { Header } from '@/components/shell/Header';
 import { DsSectionHeader } from '@/components/ds/DsSectionHeader';
 import { DsProductCard } from '@/components/ds/DsProductCard';
 import { VariantSheet } from '@/components/shell/VariantSheet';
+import { Skeleton } from '@/components/primitives/Skeleton';
 import { MarginTrendIcon, DeliveryBoxIcon, ShieldCheckIcon, ChevronRightIcon, ConcernLeafIcon, CartIcon, TrashIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import {
@@ -130,15 +131,22 @@ export default function HomeScreen() {
         {/* Hero carousel - backed by GET /store/banners?target_type=home. The Banner model is
             image-only (no eyebrow/title/blurb/cta text, unlike the old mock slides), and the
             section renders nothing at all when there are no banners yet, rather than showing an
-            empty rail. */}
-        {apiData.heroBanners.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroRail}>
-            {apiData.heroBanners.map((b) => (
-              <Pressable key={b.id} onPress={goCategories} style={styles.heroImageCard}>
-                <Image source={{ uri: b.image_url as string }} style={styles.heroImage} contentFit="cover" />
-              </Pressable>
-            ))}
-          </ScrollView>
+            empty rail. A skeleton shows only while this section's own fetch is still in flight -
+            not gated on any other section's data (see homeApi.ts's HomeApiData comment). */}
+        {apiData.heroBannersLoading ? (
+          <View style={styles.heroRail}>
+            <View style={[styles.heroImageCard, { backgroundColor: ds.line }]} />
+          </View>
+        ) : (
+          apiData.heroBanners.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroRail}>
+              {apiData.heroBanners.map((b) => (
+                <Pressable key={b.id} onPress={goCategories} style={styles.heroImageCard}>
+                  <Image source={{ uri: b.image_url as string }} style={styles.heroImage} contentFit="cover" />
+                </Pressable>
+              ))}
+            </ScrollView>
+          )
         )}
 
         {/* Up to 63% profit margin — decorative tier copy, not wired to real tier logic */}
@@ -165,6 +173,9 @@ export default function HomeScreen() {
             rotating placeholder - same approach as margin/rating on the product cards. Tapping a
             tile opens Categories pre-selected to that real category (openCategory), not just a
             generic landing on "All products". */}
+        {apiData.categoryTilesLoading ? (
+          <CategoryTilesSkeleton />
+        ) : (
         <View style={styles.prescriptionGrid}>
           {apiData.categoryTiles.map((g: ApiCategoryTile) => (
             <Pressable key={g.id} onPress={() => openCategory(g.id)} style={styles.prescriptionTile}>
@@ -175,6 +186,7 @@ export default function HomeScreen() {
             </Pressable>
           ))}
         </View>
+        )}
 
         {/* Fast-moving offers - original row-list UI, now backed by product-sections slug
             "fast-moving-offer" instead of mock data. The source design's row shows a per-product
@@ -182,7 +194,12 @@ export default function HomeScreen() {
             backend equivalent - real products show their actual category there instead (hidden
             entirely when a product has no category), everything else (photo, name, price, add/
             stepper) is the real product. */}
-        {fastMoving.length > 0 && (
+        {apiData.fastMovingLoading ? (
+          <>
+            <DsSectionHeader title="Fast-moving offers" subtitle="Price, pack and use case in one glance" />
+            <FastMovingSkeleton />
+          </>
+        ) : fastMoving.length > 0 && (
           <>
             <DsSectionHeader title="Fast-moving offers" subtitle="Price, pack and use case in one glance" />
             <View style={styles.fastMovingList}>
@@ -243,9 +260,13 @@ export default function HomeScreen() {
         <Pressable onPress={goCategories} style={styles.catalogueBand}>
           <View style={styles.catalogueText}>
             <Text style={styles.catalogueTitle}>Explore full catalogue</Text>
-            <Text style={styles.catalogueSub}>
-              {formatCount(apiData.catalogProductCount)} products across {apiData.catalogCategoryCount} categories
-            </Text>
+            {apiData.catalogCountsLoading ? (
+              <View style={styles.catalogueSkeletonBar} />
+            ) : (
+              <Text style={styles.catalogueSub}>
+                {formatCount(apiData.catalogProductCount)} products across {apiData.catalogCategoryCount} categories
+              </Text>
+            )}
           </View>
           <ChevronRightIcon size={18} color={ds.surface} strokeWidth={2} />
         </Pressable>
@@ -274,26 +295,34 @@ export default function HomeScreen() {
 
         {/* Buy again - real GET /store/orders data (ordersApi.ts), hidden entirely when logged
             out or when the logged-in customer has no past orders yet - no mock/placeholder
-            fallback. */}
-        {buyAgain.length > 0 && (
+            fallback. A skeleton only makes sense while logged in AND actually loading - a
+            logged-out visitor never sees this section at all, skeleton included. */}
+        {loggedIn && buyAgainApi.loading ? (
           <>
             <DsSectionHeader title="Buy again" subtitle="From your recent orders" />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-              {buyAgain.map((p) => (
-                <DsProductCard
-                  key={p.id}
-                  product={p}
-                  width={166}
-                  onOpen={() => openProduct(p)}
-                  onAdd={() => addApiProduct(p)}
-                  onInc={() => incApiProduct(p)}
-                  onDec={() => decApiProduct(p)}
-                  onLogin={goLogin}
-                  onSelectOption={() => setVariantSheetProduct(p)}
-                />
-              ))}
-            </ScrollView>
+            <RailSkeleton />
           </>
+        ) : (
+          buyAgain.length > 0 && (
+            <>
+              <DsSectionHeader title="Buy again" subtitle="From your recent orders" />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+                {buyAgain.map((p) => (
+                  <DsProductCard
+                    key={p.id}
+                    product={p}
+                    width={166}
+                    onOpen={() => openProduct(p)}
+                    onAdd={() => addApiProduct(p)}
+                    onInc={() => incApiProduct(p)}
+                    onDec={() => decApiProduct(p)}
+                    onLogin={goLogin}
+                    onSelectOption={() => setVariantSheetProduct(p)}
+                  />
+                ))}
+              </ScrollView>
+            </>
+          )
         )}
 
         {/* Brands to know - backed by the real "AYURVEDA ONE PVT LTD." / "AYUR VIBES" collections;
@@ -301,6 +330,9 @@ export default function HomeScreen() {
             with limit=1, reading `count`). initials/line/tint have no backend source, same
             placeholder approach as everywhere else real data doesn't cover a design field yet. */}
         <DsSectionHeader title="Brands to know" subtitle="Direct trade partners, no middle margin" />
+        {apiData.brandsLoading ? (
+          <BrandsRowSkeleton />
+        ) : (
         <View style={styles.brandsRow}>
           {apiData.brands.map((b: ApiBrand) => (
             <Pressable key={b.id} onPress={() => openBrandListing(b)} style={styles.brandCard}>
@@ -318,9 +350,20 @@ export default function HomeScreen() {
             </Pressable>
           ))}
         </View>
+        )}
 
         {/* Best sellers - backed by product-sections slug "best-sellers" */}
-        {bestSellers.length > 0 && (
+        {apiData.bestSellersLoading ? (
+          <>
+            <DsSectionHeader
+              title="Best sellers"
+              subtitle="Top-moving cases across every outlet"
+              actionLabel="View all"
+              onAction={goCategories}
+            />
+            <RailSkeleton />
+          </>
+        ) : bestSellers.length > 0 && (
           <>
             <DsSectionHeader
               title="Best sellers"
@@ -348,7 +391,17 @@ export default function HomeScreen() {
 
         {/* New arrivals - backed by product-sections slug "new-arrivals"; no such section exists
             in the backend yet, so this renders nothing until an admin creates one. */}
-        {newArrivals.length > 0 && (
+        {apiData.newArrivalsLoading ? (
+          <>
+            <DsSectionHeader
+              title="New arrivals"
+              subtitle="Added to the trade catalogue this week"
+              actionLabel="View all"
+              onAction={goCategories}
+            />
+            <RailSkeleton />
+          </>
+        ) : newArrivals.length > 0 && (
           <>
             <DsSectionHeader
               title="New arrivals"
@@ -387,7 +440,17 @@ export default function HomeScreen() {
         </ScrollView>
 
         {/* Featured products - backed by product-sections slug "featured-product" */}
-        {featured.length > 0 && (
+        {apiData.featuredLoading ? (
+          <>
+            <DsSectionHeader
+              title="Featured products"
+              subtitle="Hand-picked by your account manager."
+              actionLabel="View all"
+              onAction={goCategories}
+            />
+            <RailSkeleton />
+          </>
+        ) : featured.length > 0 && (
           <>
             <DsSectionHeader
               title="Featured products"
@@ -511,6 +574,50 @@ export default function HomeScreen() {
   );
 }
 
+// Reserves each section's real layout space while its own data is still in flight (see
+// homeApi.ts's HomeApiData comment) - a horizontal row of card-shaped placeholders, sized to
+// roughly match DsProductCard at the same 166 width used everywhere on this screen.
+const RailSkeleton = React.memo(function RailSkeleton({ count = 3 }: { count?: number }) {
+  return (
+    <View style={styles.rail}>
+      {Array.from({ length: count }).map((_, i) => (
+        <Skeleton key={i} width={166} height={230} radius={dsRadii.sheet} />
+      ))}
+    </View>
+  );
+});
+
+const CategoryTilesSkeleton = React.memo(function CategoryTilesSkeleton() {
+  return (
+    <View style={styles.prescriptionGrid}>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <View key={i} style={styles.prescriptionTile}>
+          <View style={[styles.prescriptionGlyphTile, { backgroundColor: ds.line }]} />
+        </View>
+      ))}
+    </View>
+  );
+});
+
+const BrandsRowSkeleton = React.memo(function BrandsRowSkeleton() {
+  return (
+    <View style={styles.brandsRow}>
+      <View style={[styles.brandSkeletonCard, { backgroundColor: ds.line }]} />
+      <View style={[styles.brandSkeletonCard, { backgroundColor: ds.line }]} />
+    </View>
+  );
+});
+
+const FastMovingSkeleton = React.memo(function FastMovingSkeleton() {
+  return (
+    <View style={styles.fastMovingList}>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Skeleton key={i} height={96} radius={dsRadii.button} />
+      ))}
+    </View>
+  );
+});
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: ds.canvas },
   scrollContent: { paddingBottom: dsSpacing.xl },
@@ -614,6 +721,7 @@ const styles = StyleSheet.create({
   catalogueText: { flex: 1, minWidth: 0 },
   catalogueTitle: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.surface },
   catalogueSub: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,.72)', marginTop: 4 },
+  catalogueSkeletonBar: { width: 160, height: 12, borderRadius: dsRadii.chip, backgroundColor: 'rgba(255,255,255,.2)', marginTop: 6 },
 
   uspGrid: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
   uspTile: { flex: 1, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, padding: dsSpacing.md, alignItems: 'center', ...dsElevation.e1 },
@@ -624,6 +732,7 @@ const styles = StyleSheet.create({
 
   brandsRow: { flexDirection: 'row', gap: dsSpacing.md, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
   brandCard: { flex: 1, minWidth: 0, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, overflow: 'hidden', ...dsElevation.e1 },
+  brandSkeletonCard: { flex: 1, minWidth: 0, height: 168, borderRadius: dsRadii.button },
   brandImage: { aspectRatio: 4 / 3, backgroundColor: ds.primarySoft, justifyContent: 'flex-end', padding: 8 },
   brandImageLabel: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3 },
   brandInitials: { position: 'absolute', top: 8, left: 8, width: 32, height: 32, borderRadius: dsRadii.input, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },

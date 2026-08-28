@@ -60,37 +60,61 @@ export interface ApiBrand {
   tint: string;
 }
 
+// Each section of Home's real content resolves and renders independently - no single "loading"
+// flag gating the whole screen. Previously this was one big loading boolean flipped only once
+// every fetch (including a slow combined product-hydration call spanning every section) had
+// finished, which left the screen fully blank for 8-10s and then popped everything in at once
+// (see the "add a loader / display whatever is fetched" conversation). Now each section has its
+// own `<x>Loading` flag so index.tsx can show a lightweight per-section skeleton only until that
+// section's own data arrives, letting fast pieces (hero banner, category tiles, catalog counts)
+// appear immediately instead of waiting on the slowest one.
 export interface HomeApiData {
-  loading: boolean;
   error: boolean;
   bestSellers: MedusaProduct[];
+  bestSellersLoading: boolean;
   newArrivals: MedusaProduct[];
+  newArrivalsLoading: boolean;
   featured: MedusaProduct[];
+  featuredLoading: boolean;
   fastMoving: MedusaProduct[];
+  fastMovingLoading: boolean;
   concernShelves: ApiConcernShelf[];
+  concernShelvesLoading: boolean;
   categoryTiles: ApiCategoryTile[];
+  categoryTilesLoading: boolean;
   brands: ApiBrand[];
+  brandsLoading: boolean;
   heroBanners: MedusaBanner[];
+  heroBannersLoading: boolean;
   // Real full-catalog totals (not scoped to the Prescription-at-a-glance tiles above) - backs the
   // "Explore full catalogue" band's product/category counts, replacing that copy's old hardcoded
   // "300+ products across 8 categories".
   catalogProductCount: number;
   catalogCategoryCount: number;
+  catalogCountsLoading: boolean;
 }
 
 const EMPTY_DATA: HomeApiData = {
-  loading: true,
   error: false,
   bestSellers: [],
+  bestSellersLoading: true,
   newArrivals: [],
+  newArrivalsLoading: true,
   featured: [],
+  featuredLoading: true,
   fastMoving: [],
+  fastMovingLoading: true,
   concernShelves: [],
+  concernShelvesLoading: true,
   categoryTiles: [],
+  categoryTilesLoading: true,
   brands: [],
+  brandsLoading: true,
   heroBanners: [],
+  heroBannersLoading: true,
   catalogProductCount: 0,
   catalogCategoryCount: 0,
+  catalogCountsLoading: true,
 };
 
 const CONCERN_TINTS = ['#DCF5E9', '#FCF1E0', '#EAEFF7', '#F7EBED'];
@@ -103,57 +127,45 @@ function initialsOf(title: string): string {
   return (words[0]?.[0] ?? '') + (words[1]?.[0] ?? '');
 }
 
-// Fetches every piece of Home's real content in parallel, once. Product
-// price/collection/category data is hydrated for every product referenced
-// by any (non-excluded) product-section in a single batched
-// fetchProductsByIds call rather than one request per section.
+// Sorts hydrated products back to `ids`' original order (fetchProductsByIds makes no ordering
+// guarantee) and drops any id that didn't resolve (removed/unpublished since the section was
+// configured) - shared by every section hydration below.
+function orderHydrated(ids: { id: string }[], hydrated: MedusaProduct[]): MedusaProduct[] {
+  const byId = new Map(hydrated.map((p) => [p.id, p] as const));
+  return ids.map((p) => byId.get(p.id)).filter((p): p is MedusaProduct => !!p);
+}
+
+// Fetches every piece of Home's real content, each independently - NOT one Promise.all gating a
+// single setData() at the end (see HomeApiData's own comment for why). Every fetch below patches
+// state as soon as IT resolves, so section A never waits on section B's network round trip.
+//
+// Product sections specifically: fetchProductSections() itself is fast (just ids/slugs/titles,
+// no price/stock data), so it resolves quickly and tells us which named sections exist. Each
+// NAMED section (best sellers/new arrivals/featured/fast-moving) then hydrates with its OWN
+// fetchProductsByIds call, independently of the others - previously this was one combined call
+// hydrating every section's products (including every concern shelf) at once, which meant Best
+// Sellers's own ~10 products sat blocked behind the slowest/largest shelf's hydration too. Concern
+// shelves still hydrate as one combined batch (their count/membership isn't known until
+// fetchProductSections resolves, and they're the lowest-priority, typically below-the-fold
+// section anyway - not worth splitting into N separate requests).
 export function useHomeApiData(): HomeApiData {
   const [data, setData] = useState<HomeApiData>(EMPTY_DATA);
 
   useEffect(() => {
     let cancelled = false;
+    const patch = (partial: Partial<HomeApiData>) => {
+      if (!cancelled) setData((prev) => ({ ...prev, ...partial }));
+    };
 
-    async function load() {
-      try {
-        const [sectionsRes, categorySectionsRes, bannersRes, brandSectionsRes, catalogProducts, catalogCategories] = await Promise.all([
-          fetchProductSections(),
-          fetchCategorySections(),
-          fetchBanners('home'),
-          // "home-brands" - the admin-curated section (Operations > Brand Sections in admin,
-          // title "Home Brands") backing this rail. Shows only the admin's picks instead of
-          // every collection in the catalog - same reasoning as category-sections' "category-page".
-          fetchBrandSections('home-brands'),
-          // limit:1 - only `count` is read from either. No parent_category_id filter - this
-          // should match the FULL category count (matches admin's Product > Categories menu,
-          // e.g. 84), not just the 13 top-level ones.
-          searchProducts({ limit: 1 }),
-          storeFetch<{ count: number }>('/store/product-categories', { limit: '1' }),
-        ]);
-        const curatedBrands = brandSectionsRes.brand_sections[0]?.brands ?? [];
+    fetchBanners('home')
+      .then((res) => patch({ heroBanners: res.banners, heroBannersLoading: false }))
+      .catch(() => patch({ heroBannersLoading: false, error: true }));
 
-        const sections = sectionsRes.product_sections.filter((s) => !EXCLUDED_SLUGS.has(s.slug));
-        const bestSellersSection = sections.find((s) => s.slug === 'best-sellers');
-        const newArrivalsSection = sections.find((s) => s.slug === 'new-arrivals');
-        const featuredSection = sections.find((s) => s.slug === 'featured-product' || s.slug === 'featured');
-        const fastMovingSection = sections.find((s) => s.slug === 'fast-moving-offer');
-        const concernSections = sections.filter(
-          (s) => s !== bestSellersSection && s !== newArrivalsSection && s !== featuredSection && s !== fastMovingSection
-        );
-
-        const allIds = [
-          ...new Set(sections.flatMap((s) => s.products.map((p) => p.id))),
-        ];
-        const [hydratedProducts, brandCounts] = await Promise.all([
-          fetchProductsByIds(allIds),
-          fetchCollectionProductCounts(curatedBrands.map((c) => c.id)),
-        ]);
-        const productsById = new Map(hydratedProducts.map((p) => [p.id, p] as const));
-        const resolve = (ids: { id: string }[]): MedusaProduct[] =>
-          ids.map((p) => productsById.get(p.id)).filter((p): p is MedusaProduct => !!p);
-
+    fetchCategorySections()
+      .then((res) => {
         const categoryTiles: ApiCategoryTile[] = [];
         const seenCategoryIds = new Set<string>();
-        for (const section of categorySectionsRes.category_sections) {
+        for (const section of res.category_sections) {
           for (const cat of section.categories) {
             if (seenCategoryIds.has(cat.id)) continue;
             seenCategoryIds.add(cat.id);
@@ -166,7 +178,17 @@ export function useHomeApiData(): HomeApiData {
             });
           }
         }
+        patch({ categoryTiles, categoryTilesLoading: false });
+      })
+      .catch(() => patch({ categoryTilesLoading: false, error: true }));
 
+    // "home-brands" - the admin-curated section (Operations > Brand Sections in admin, title
+    // "Home Brands") backing this rail. Shows only the admin's picks instead of every collection
+    // in the catalog - same reasoning as category-sections' "category-page".
+    fetchBrandSections('home-brands')
+      .then(async (res) => {
+        const curatedBrands = res.brand_sections[0]?.brands ?? [];
+        const brandCounts = await fetchCollectionProductCounts(curatedBrands.map((c) => c.id));
         const brands: ApiBrand[] = curatedBrands.map((c, i) => ({
           id: c.id,
           name: c.title,
@@ -175,35 +197,98 @@ export function useHomeApiData(): HomeApiData {
           skus: brandCounts[c.id] ?? 0,
           tint: BRAND_TINTS[i % BRAND_TINTS.length],
         }));
+        patch({ brands, brandsLoading: false });
+      })
+      .catch(() => patch({ brandsLoading: false, error: true }));
 
-        if (cancelled) return;
-
-        setData({
-          loading: false,
-          error: false,
-          bestSellers: bestSellersSection ? resolve(bestSellersSection.products) : [],
-          newArrivals: newArrivalsSection ? resolve(newArrivalsSection.products) : [],
-          featured: featuredSection ? resolve(featuredSection.products) : [],
-          fastMoving: fastMovingSection ? resolve(fastMovingSection.products) : [],
-          concernShelves: concernSections.map((s, i) => ({
-            slug: s.slug,
-            title: s.title,
-            blurb: 'Curated products for this shelf',
-            tint: CONCERN_TINTS[i % CONCERN_TINTS.length],
-            rawProducts: resolve(s.products),
-          })),
-          categoryTiles,
-          brands,
-          heroBanners: bannersRes.banners,
+    // limit:1 - only `count` is read from either. No parent_category_id filter - this should
+    // match the FULL category count (matches admin's Product > Categories menu, e.g. 84), not
+    // just the 13 top-level ones.
+    Promise.all([
+      searchProducts({ limit: 1 }),
+      storeFetch<{ count: number }>('/store/product-categories', { limit: '1' }),
+    ])
+      .then(([catalogProducts, catalogCategories]) => {
+        patch({
           catalogProductCount: catalogProducts.count,
           catalogCategoryCount: catalogCategories.count,
+          catalogCountsLoading: false,
         });
-      } catch {
-        if (!cancelled) setData((prev) => ({ ...prev, loading: false, error: true }));
-      }
-    }
+      })
+      .catch(() => patch({ catalogCountsLoading: false, error: true }));
 
-    load();
+    fetchProductSections()
+      .then((sectionsRes) => {
+        const sections = sectionsRes.product_sections.filter((s) => !EXCLUDED_SLUGS.has(s.slug));
+        const bestSellersSection = sections.find((s) => s.slug === 'best-sellers');
+        const newArrivalsSection = sections.find((s) => s.slug === 'new-arrivals');
+        const featuredSection = sections.find((s) => s.slug === 'featured-product' || s.slug === 'featured');
+        const fastMovingSection = sections.find((s) => s.slug === 'fast-moving-offer');
+        const concernSections = sections.filter(
+          (s) => s !== bestSellersSection && s !== newArrivalsSection && s !== featuredSection && s !== fastMovingSection
+        );
+
+        if (bestSellersSection?.products.length) {
+          fetchProductsByIds(bestSellersSection.products.map((p) => p.id))
+            .then((hydrated) => patch({ bestSellers: orderHydrated(bestSellersSection.products, hydrated), bestSellersLoading: false }))
+            .catch(() => patch({ bestSellersLoading: false, error: true }));
+        } else {
+          patch({ bestSellers: [], bestSellersLoading: false });
+        }
+
+        if (newArrivalsSection?.products.length) {
+          fetchProductsByIds(newArrivalsSection.products.map((p) => p.id))
+            .then((hydrated) => patch({ newArrivals: orderHydrated(newArrivalsSection.products, hydrated), newArrivalsLoading: false }))
+            .catch(() => patch({ newArrivalsLoading: false, error: true }));
+        } else {
+          patch({ newArrivals: [], newArrivalsLoading: false });
+        }
+
+        if (featuredSection?.products.length) {
+          fetchProductsByIds(featuredSection.products.map((p) => p.id))
+            .then((hydrated) => patch({ featured: orderHydrated(featuredSection.products, hydrated), featuredLoading: false }))
+            .catch(() => patch({ featuredLoading: false, error: true }));
+        } else {
+          patch({ featured: [], featuredLoading: false });
+        }
+
+        if (fastMovingSection?.products.length) {
+          fetchProductsByIds(fastMovingSection.products.map((p) => p.id))
+            .then((hydrated) => patch({ fastMoving: orderHydrated(fastMovingSection.products, hydrated), fastMovingLoading: false }))
+            .catch(() => patch({ fastMovingLoading: false, error: true }));
+        } else {
+          patch({ fastMoving: [], fastMovingLoading: false });
+        }
+
+        if (concernSections.length) {
+          const concernIds = [...new Set(concernSections.flatMap((s) => s.products.map((p) => p.id)))];
+          fetchProductsByIds(concernIds)
+            .then((hydrated) => {
+              const concernShelves: ApiConcernShelf[] = concernSections.map((s, i) => ({
+                slug: s.slug,
+                title: s.title,
+                blurb: 'Curated products for this shelf',
+                tint: CONCERN_TINTS[i % CONCERN_TINTS.length],
+                rawProducts: orderHydrated(s.products, hydrated),
+              }));
+              patch({ concernShelves, concernShelvesLoading: false });
+            })
+            .catch(() => patch({ concernShelvesLoading: false, error: true }));
+        } else {
+          patch({ concernShelves: [], concernShelvesLoading: false });
+        }
+      })
+      .catch(() =>
+        patch({
+          bestSellersLoading: false,
+          newArrivalsLoading: false,
+          featuredLoading: false,
+          fastMovingLoading: false,
+          concernShelvesLoading: false,
+          error: true,
+        })
+      );
+
     return () => {
       cancelled = true;
     };
