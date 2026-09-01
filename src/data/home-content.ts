@@ -172,15 +172,11 @@ export const heroSlides: HeroSlide[] = [
   { eyebrow: 'NET 30 TERMS', title: 'Skin & Hair Care', tint: '#EAEFF7', blurb: 'Cold-pressed tailas and oils. Order now, pay in 30 days on approved accounts.', cta: 'Browse tailas', cat: 'Skin & Hair Care' },
 ];
 
-// --- Promo banner carousel (line 2753) — `eyebrow`/`title`/`sub` all render in fixed colors in the
-// new markup (no per-banner accent), so the old design's `accent` field is dropped. Read-only
-// display cards, not links to anything - the old targetListing/targetScreen navigation fields
-// were dropped once tapping these was removed. ---
-export const promoBanners = [
-  { eyebrow: 'BULK PRICING', title: 'Save more on 3+ cases', sub: 'Automatic tier discounts applied at checkout', tint: '#DCF5E9' },
-  { eyebrow: 'NEW STOCK', title: "This week's fresh arrivals", sub: 'Restocked daily from verified farms and mills', tint: '#FCF1E0' },
-  { eyebrow: 'FREE DELIVERY', title: 'Free delivery over ₹5,000', sub: 'On every order across all pickup zones', tint: '#EAEFF7' },
-];
+// Promo banner carousel (line 2753) is now real, admin-managed content - GET
+// /store/banners?target_type=home_promo (homeApi.ts's useHomeApiData), same image-only Banner
+// model as the Hero carousel above it, just a distinct target_type so admin can upload a separate
+// set of images for this row. The old hardcoded eyebrow/title/sub/tint array that used to live
+// here is gone - see index.tsx's promo section for the real fetch + render.
 
 // --- Brands to know (line 2801) — card image placeholder is fixed `#DCF5E9` in the new markup, not
 // `b.tint`, so tint is kept only as data (still used by `openBrand`'s listing tint) but no longer

@@ -30,8 +30,8 @@ export { hashProductId };
 // (product-sections / category-sections / brand-sections / banners). Buy again and What buyers
 // say are ALSO real now (ordersApi.ts's useBuyAgainProducts, reviewsApi.ts's useRecentReviews
 // respectively) but neither is a product-section, so both stay out of this file entirely -
-// index.tsx calls their own hooks directly. Only Doctor's Talk and the promo banners remain
-// purely-editorial mock content (home-content.ts) with no backend model yet.
+// index.tsx calls their own hooks directly. Only Doctor's Talk remains purely-editorial mock
+// content (home-content.ts) with no backend model yet - the promo banners (below) are real too now.
 //
 // `buy-again` stays excluded here since it was never a real product-section to begin with (its
 // content comes from order history, not this admin-curated mechanism).
@@ -94,6 +94,11 @@ export interface HomeApiData {
   brandsLoading: boolean;
   heroBanners: MedusaBanner[];
   heroBannersLoading: boolean;
+  // "Promo cards" rail - GET /store/banners?target_type=home_promo. Same Banner model/shape as
+  // heroBanners, just a distinct target_type so admin can upload a separate image set for this
+  // row (see banner.ts's target_type enum + the admin Banners page's "Home Promo Cards" option).
+  promoBanners: MedusaBanner[];
+  promoBannersLoading: boolean;
   // Real full-catalog totals (not scoped to the Prescription-at-a-glance tiles above) - backs the
   // "Explore full catalogue" band's product/category counts, replacing that copy's old hardcoded
   // "300+ products across 8 categories".
@@ -120,6 +125,8 @@ const EMPTY_DATA: HomeApiData = {
   brandsLoading: true,
   heroBanners: [],
   heroBannersLoading: true,
+  promoBanners: [],
+  promoBannersLoading: true,
   catalogProductCount: 0,
   catalogCategoryCount: 0,
   catalogCountsLoading: true,
@@ -168,6 +175,10 @@ export function useHomeApiData(): HomeApiData {
     fetchBanners('home')
       .then((res) => patch({ heroBanners: res.banners, heroBannersLoading: false }))
       .catch(() => patch({ heroBannersLoading: false, error: true }));
+
+    fetchBanners('home_promo')
+      .then((res) => patch({ promoBanners: res.banners, promoBannersLoading: false }))
+      .catch(() => patch({ promoBannersLoading: false, error: true }));
 
     // "prescriptions-at-a-glance" - the admin-curated section backing THIS specific tile grid.
     // Previously fetched with no slug filter at all, which returned EVERY category section

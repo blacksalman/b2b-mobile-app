@@ -10,9 +10,6 @@ import { VariantSheet } from '@/components/shell/VariantSheet';
 import { Skeleton } from '@/components/primitives/Skeleton';
 import { MarginTrendIcon, DeliveryBoxIcon, ShieldCheckIcon, ChevronRightIcon, ConcernLeafIcon, CartIcon, TrashIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
-import {
-  promoBanners,
-} from '@/data/home-content';
 import { useHomeApiData, useDoctorTalks, toRailProduct, type ApiCategoryTile, type ApiBrand } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { useBuyAgainProducts } from '@/data/ordersApi';
@@ -440,17 +437,27 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* Promo banner carousel - read-only display cards, not links to anything (previously
-            navigated to a Listing/Categories/Stores screen; removed per instruction). */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.promoRail}>
-          {promoBanners.map((pb) => (
-            <View key={pb.title} style={[styles.promoCard, { backgroundColor: pb.tint }]}>
-              <Text style={styles.promoEyebrow}>{pb.eyebrow}</Text>
-              <Text style={styles.promoTitle}>{pb.title}</Text>
-              <Text style={styles.promoSub}>{pb.sub}</Text>
-            </View>
-          ))}
-        </ScrollView>
+        {/* Promo banner carousel - backed by GET /store/banners?target_type=home_promo, same
+            image-only Banner model as the Hero carousel above (own admin-managed image set, not
+            a re-display of the Hero banners). Read-only, not links to anything (previously
+            navigated to a Listing/Categories/Stores screen; removed per instruction). Section
+            renders nothing when there are no banners yet, matching the Hero carousel's own
+            empty-state behavior. */}
+        {apiData.promoBannersLoading ? (
+          <View style={styles.promoRail}>
+            <View style={[styles.promoCard, styles.promoImage, { backgroundColor: ds.line }]} />
+          </View>
+        ) : (
+          apiData.promoBanners.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.promoRail}>
+              {apiData.promoBanners.map((pb) => (
+                <View key={pb.id as string} style={styles.promoCard}>
+                  <Image source={{ uri: pb.image_url as string }} style={styles.promoImage} contentFit="cover" />
+                </View>
+              ))}
+            </ScrollView>
+          )
+        )}
 
         {/* Featured products - backed by product-sections slug "featured-product" */}
         {apiData.featuredLoading ? (
@@ -778,10 +785,8 @@ const styles = StyleSheet.create({
   brandSkus: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk, marginTop: 4 },
 
   promoRail: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.sm, paddingTop: dsSpacing.lg },
-  promoCard: { width: 272, borderRadius: dsRadii.sheet, padding: dsSpacing.md },
-  promoEyebrow: { fontFamily: dsFontFamily[700], fontSize: 11, lineHeight: 14, letterSpacing: 1.32, color: ds.ink2 },
-  promoTitle: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.ink, marginTop: dsSpacing.sm },
-  promoSub: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
+  promoCard: { width: 272, borderRadius: dsRadii.sheet, overflow: 'hidden' },
+  promoImage: { width: '100%', aspectRatio: 16 / 9 },
 
   concernBanner: {
     marginHorizontal: dsSpacing.lg,
