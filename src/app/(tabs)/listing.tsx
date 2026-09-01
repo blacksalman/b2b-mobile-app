@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,7 +42,7 @@ function addFlashLabel(name: string): string {
 export default function ListingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ ids: string; collectionId: string; title: string; tagline: string; tint: string }>();
+  const params = useLocalSearchParams<{ ids: string; collectionId: string; title: string; tagline: string; tint: string; image?: string }>();
   const {
     cart,
     loggedIn,
@@ -70,6 +71,7 @@ export default function ListingScreen() {
   const title = params.title ?? '';
   const tagline = params.tagline ?? '';
   const tint = params.tint || ds.primarySoft;
+  const heroImage = params.image || null;
 
   // Mock path.
   const ids = useMemo(() => (params.ids ? params.ids.split(',').map(Number).filter((n) => !Number.isNaN(n)) : []), [params.ids]);
@@ -105,6 +107,7 @@ export default function ListingScreen() {
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={[styles.hero, { backgroundColor: tint }]}>
+          {heroImage && <Image source={{ uri: heroImage }} style={styles.heroImage} contentFit="cover" />}
           <Pressable onPress={goBack} style={[styles.backButton, { top: insets.top + 12 }]}>
             <SmallBackChevronIcon size={9} color={ds.ink} />
           </Pressable>
@@ -201,6 +204,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: ds.canvas },
   scrollContent: { paddingBottom: dsSpacing.xl },
   hero: { height: 220, position: 'relative', justifyContent: 'flex-end', overflow: 'hidden' },
+  heroImage: { ...StyleSheet.absoluteFillObject },
   backButton: {
     position: 'absolute',
     left: dsSpacing.lg,

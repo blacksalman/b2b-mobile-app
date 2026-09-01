@@ -155,7 +155,7 @@ export interface MedusaCollection {
   id: string;
   title: string;
   handle: string;
-  metadata?: { image_url?: string | null } | null;
+  metadata?: { image_url?: string | null; listing_banner_image_url?: string | null } | null;
 }
 
 export function fetchCollections(): Promise<{ collections: MedusaCollection[] }> {

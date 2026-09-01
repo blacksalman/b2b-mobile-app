@@ -66,6 +66,11 @@ export interface ApiBrand {
   // Set by the admin's Collection Image widget (metadata.image_url) - null until an admin
   // uploads one, in which case the card shows this instead of the "store photo" placeholder.
   imageUrl: string | null;
+  // Set by the same widget's separate "Listing Banner Image" field (metadata.listing_banner_
+  // image_url) - a distinct, optional image for the brand's Listing page hero (a square brand-
+  // card photo rarely crops well into a wide banner). openBrandListing (index.tsx) falls back to
+  // imageUrl, then the flat tint, when this is null - see listing.tsx's own fallback comment.
+  listingBannerImageUrl: string | null;
 }
 
 // Each section of Home's real content resolves and renders independently - no single "loading"
@@ -223,6 +228,7 @@ export function useHomeApiData(): HomeApiData {
           skus: brandCounts[c.id] ?? 0,
           tint: BRAND_TINTS[i % BRAND_TINTS.length],
           imageUrl: c.metadata?.image_url ?? null,
+          listingBannerImageUrl: c.metadata?.listing_banner_image_url ?? null,
         }));
         patch({ brands, brandsLoading: false });
       })

@@ -121,7 +121,12 @@ export default function HomeScreen() {
   // empty/garbage listing. Simplified to just open Categories' "All" view instead, same as
   // "Explore full catalogue" already does.
   const openBrandListing = (b: ApiBrand) => {
-    router.push({ pathname: '/listing', params: { collectionId: b.id, title: b.name, tagline: `${b.skus} products`, tint: b.tint } });
+    // Listing's hero banner: prefer the dedicated listingBannerImageUrl (admin's separate
+    // "Listing Banner Image" upload, sized for a wide banner); fall back to the same square
+    // imageUrl already shown on this brand's Home card if no banner-specific image is set;
+    // listing.tsx itself falls back further to a flat tint when both are empty.
+    const heroImage = b.listingBannerImageUrl ?? b.imageUrl ?? '';
+    router.push({ pathname: '/listing', params: { collectionId: b.id, title: b.name, tagline: `${b.skus} products`, tint: b.tint, image: heroImage } });
   };
 
   return (
