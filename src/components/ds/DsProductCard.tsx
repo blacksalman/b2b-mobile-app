@@ -20,6 +20,12 @@ interface DsProductCardProps {
   // where the actual real variant picker lives (see product/[id].tsx), so "select" and "view
   // details" land on the same place.
   onSelectOption?: () => void;
+  // Admin-configurable (Settings > App Config -> Store.metadata, see AppStateContext's
+  // bulkQtyThreshold) - once the stepper reaches this quantity, a nudge message appears below it
+  // pointing to the product page's bulk-quantity input. Purely informational: the stepper itself
+  // keeps incrementing past this number, nothing here blocks it. Optional so any call site that
+  // hasn't been updated to pass it just never shows the nudge, rather than crashing.
+  bulkQtyThreshold?: number;
 }
 
 // Rebuilt against the new AyurvedaOne design system's product card (repeated verbatim across every
@@ -30,7 +36,7 @@ interface DsProductCardProps {
 // markup) and shows a discount chip instead - the real per-unit discount % (p.discount), not a
 // fabricated margin number. `noOffer` (Featured rail only) hides the struck compare-at price —
 // every other rail always shows it when a real discount is active.
-export const DsProductCard = React.memo(function DsProductCard({ product: p, width, onOpen, onAdd, onInc, onDec, onLogin, onSelectOption }: DsProductCardProps) {
+export const DsProductCard = React.memo(function DsProductCard({ product: p, width, onOpen, onAdd, onInc, onDec, onLogin, onSelectOption, bulkQtyThreshold }: DsProductCardProps) {
   // A real discount/MRP is only genuine when the product actually has one (p.cmp set) - decorateProduct
   // falls back to a fabricated compareLabel (price*1.18) when it isn't, purely so mock-catalog screens
   // that expect every card to show *some* struck price keep working; real API products correctly leave
@@ -90,15 +96,22 @@ export const DsProductCard = React.memo(function DsProductCard({ product: p, wid
                 <Text style={styles.selectOptionText}>Select option</Text>
               </Pressable>
             ) : p.inCart ? (
-              <View style={styles.stepper}>
-                <Pressable onPress={onDec} style={styles.stepperBtn} hitSlop={4}>
-                  {p.cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
-                </Pressable>
-                <Text style={styles.stepperQty}>{p.cartQty}</Text>
-                <Pressable onPress={onInc} style={styles.stepperBtn} hitSlop={4}>
-                  <Text style={styles.stepperGlyph}>+</Text>
-                </Pressable>
-              </View>
+              <>
+                <View style={styles.stepper}>
+                  <Pressable onPress={onDec} style={styles.stepperBtn} hitSlop={4}>
+                    {p.cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
+                  </Pressable>
+                  <Text style={styles.stepperQty}>{p.cartQty}</Text>
+                  <Pressable onPress={onInc} style={styles.stepperBtn} hitSlop={4}>
+                    <Text style={styles.stepperGlyph}>+</Text>
+                  </Pressable>
+                </View>
+                {!!bulkQtyThreshold && p.cartQty >= bulkQtyThreshold && (
+                  <Pressable onPress={onOpen}>
+                    <Text style={styles.bulkNudge}>Need more? Buy in bulk on the product page</Text>
+                  </Pressable>
+                )}
+              </>
             ) : (
               <Pressable onPress={onAdd} style={styles.addButton}>
                 <CartIcon size={14} color={ds.surface} />
@@ -189,6 +202,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   stepperBtn: { width: 34, height: 40, alignItems: 'center', justifyContent: 'center' },
+  bulkNudge: {
+    marginTop: 6,
+    fontFamily: dsFontFamily[400],
+    fontSize: 11,
+    lineHeight: 14,
+    color: ds.primaryInk,
+    textDecorationLine: 'underline',
+  },
   stepperGlyph: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk },
   stepperQty: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk },
   addButton: {

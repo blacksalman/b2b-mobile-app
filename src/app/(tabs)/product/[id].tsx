@@ -42,9 +42,9 @@ import { StubScreen } from '@/components/shell/StubScreen';
 import { useProductDetail } from '@/data/productDetailApi';
 import { toProduct, toRailProduct, toVariantProduct } from '@/data/homeApi';
 import { productHref } from '@/data/idHash';
-import { syncCartQuantity } from '@/data/cartSync';
+import { syncCartQuantity, getVariantIdByHashId } from '@/data/cartSync';
 import { useApiCartActions } from '@/data/useApiCartActions';
-import { fetchDeliveryEstimate } from '@/lib/medusaClient';
+import { fetchDeliveryEstimate, fetchVariantStock } from '@/lib/medusaClient';
 import { useReviewSummaries, useProductReviews, summaryFor } from '@/data/reviewsApi';
 import { usePolicies } from '@/data/account-content';
 import { PolicySheet } from '@/components/shell/PolicySheet';
@@ -129,7 +129,7 @@ export default function ProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { cart, loggedIn, addToCart, inc, dec, flash } = useAppState();
+  const { cart, loggedIn, addToCart, inc, dec, setQty, flash, bulkQtyThreshold } = useAppState();
 
   // `id` is either a mock catalog numeric id (Buy again/Fast-moving/Listing still link that way)
   // or a real product's handle (every other screen's cards - see idHash.ts's productHref).
@@ -162,6 +162,13 @@ export default function ProductScreen() {
   const [productTab, setProductTab] = useState<ProductTab>('Description');
   const [pincode, setPincode] = useState('');
   const [pincodeResult, setPincodeResult] = useState('');
+  // Bulk-quantity input (sits alongside the sticky add-bar's own +/- stepper, doesn't replace
+  // it) - type any quantity, checked against real stock (GET /store/variants/:id/stock) before
+  // it's actually set as the cart line's quantity. `checking` disables the button mid-request
+  // rather than letting a second tap race the first.
+  const [bulkQtyInput, setBulkQtyInput] = useState('');
+  const [bulkQtyStatus, setBulkQtyStatus] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
+  const [bulkQtyChecking, setBulkQtyChecking] = useState(false);
   // Variant picker (product id 2 only) — screen-local, matching the pre-existing precedent in this
   // app (VariantSheet/Categories already keep `variantCart` screen-local, not global).
   const [variantPick, setVariantPick] = useState(0);
@@ -293,6 +300,44 @@ export default function ProductScreen() {
       setPincodeResult(estimate.message);
     } catch {
       setPincodeResult('Could not check delivery estimate for this pincode');
+    }
+  };
+
+  // Bulk-quantity "Set quantity" - a fresh real-time stock lookup (not the app's own cached
+  // inStock boolean, which only ever means ">0 somewhere") before actually setting the cart
+  // line, so a request for more than what's on hand gets rejected with the real count rather
+  // than silently overselling. `unlimited` (not inventory-tracked, or backorder allowed) skips
+  // the count comparison entirely - any quantity is fine.
+  const setBulkQuantity = async () => {
+    const qty = parseInt(bulkQtyInput, 10);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setBulkQtyStatus({ type: 'error', message: 'Enter a whole number greater than 0' });
+      return;
+    }
+    const variantId = getVariantIdByHashId(active.id);
+    if (!variantId) {
+      setBulkQtyStatus({ type: 'error', message: 'Could not verify stock for this product' });
+      return;
+    }
+    setBulkQtyChecking(true);
+    setBulkQtyStatus(null);
+    try {
+      const stock = await fetchVariantStock(variantId);
+      if (stock.unlimited || (stock.available ?? 0) >= qty) {
+        setQty(active.id, qty);
+        syncCartQuantity(active.id, qty);
+        setBulkQtyStatus({ type: 'success', message: `Set quantity to ${qty} and added to cart` });
+        setBulkQtyInput('');
+      } else {
+        setBulkQtyStatus({
+          type: 'error',
+          message: `Only ${stock.available ?? 0} in stock - enter a smaller quantity`,
+        });
+      }
+    } catch {
+      setBulkQtyStatus({ type: 'error', message: 'Could not check stock right now' });
+    } finally {
+      setBulkQtyChecking(false);
     }
   };
 
@@ -575,6 +620,46 @@ export default function ProductScreen() {
           </View>
         )}
 
+        {/* Bulk-quantity input - sits alongside the sticky add-bar's own +/- stepper (below,
+            unchanged), doesn't replace it. Type any quantity, checked against a fresh real stock
+            count (not the cached inStock boolean) before it's actually set as the cart line's
+            quantity - see setBulkQuantity above. */}
+        {isReal && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Buy in bulk</Text>
+            <Text style={[dsType.meta, styles.bulkQtySubtitle]}>
+              Need a large quantity? Enter it below - we'll check stock before adding it to your cart.
+            </Text>
+            <View style={styles.pincodeRow}>
+              <View style={styles.pincodeInput}>
+                <TextInput
+                  value={bulkQtyInput}
+                  onChangeText={(t) => {
+                    setBulkQtyInput(t.replace(/[^0-9]/g, ''));
+                    setBulkQtyStatus(null);
+                  }}
+                  placeholder="e.g. 100"
+                  placeholderTextColor={ds.ink2}
+                  style={styles.pincodeInputText}
+                  keyboardType="number-pad"
+                />
+              </View>
+              <Pressable onPress={setBulkQuantity} style={styles.checkButton} disabled={bulkQtyChecking}>
+                <Text style={styles.checkButtonText}>{bulkQtyChecking ? 'Checking…' : 'Set quantity'}</Text>
+              </Pressable>
+            </View>
+            {!!bulkQtyStatus && (
+              <View style={[styles.pincodeResult, bulkQtyStatus.type === 'error' && styles.bulkQtyResultError]}>
+                <Text
+                  style={[styles.pincodeResultText, bulkQtyStatus.type === 'error' && styles.bulkQtyResultErrorText]}
+                >
+                  {bulkQtyStatus.message}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={styles.sectionHeaderBlock}>
           <Text style={styles.sectionTitle}>Estimated delivery</Text>
           <Text style={styles.sectionSubtitle}>Check availability for your area</Text>
@@ -698,6 +783,7 @@ export default function ProductScreen() {
                   onDec={() => railOnDec(p)}
                   onLogin={goAccount}
                   onSelectOption={() => setVariantSheetProduct(p)}
+                  bulkQtyThreshold={bulkQtyThreshold}
                 />
               ))}
             </ScrollView>
@@ -722,6 +808,7 @@ export default function ProductScreen() {
                   onDec={() => railOnDec(p)}
                   onLogin={goAccount}
                   onSelectOption={() => setVariantSheetProduct(p)}
+                  bulkQtyThreshold={bulkQtyThreshold}
                 />
               ))}
             </ScrollView>
@@ -973,6 +1060,9 @@ const styles = StyleSheet.create({
   checkButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
   pincodeResult: { marginTop: dsSpacing.md, backgroundColor: ds.primarySoft, borderRadius: dsRadii.input, padding: dsSpacing.md },
   pincodeResultText: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.primaryInk },
+  bulkQtySubtitle: { marginTop: 4, marginBottom: dsSpacing.md },
+  bulkQtyResultError: { backgroundColor: ds.danger },
+  bulkQtyResultErrorText: { color: ds.dangerInk },
 
   tabsSection: { paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.xl },
   tabsRow: { flexDirection: 'row', gap: dsSpacing.lg, borderBottomWidth: 1, borderBottomColor: ds.line },

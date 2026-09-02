@@ -31,7 +31,7 @@ function formatCount(n: number): string {
 // — same fidelity approach as every previous screen in this app.
 export default function HomeScreen() {
   const router = useRouter();
-  const { cart, loggedIn } = useAppState();
+  const { cart, loggedIn, bulkQtyThreshold } = useAppState();
 
   // Real order history (GET /store/orders, see ordersApi.ts) - up to the 10 most recently
   // ordered distinct products, current price/thumbnail/handle re-hydrated same as every other
@@ -243,14 +243,21 @@ export default function HomeScreen() {
                       </View>
                     </View>
                     {inCart ? (
-                      <View style={styles.fastMovingStepper}>
-                        <Pressable onPress={() => decApiProduct(p)} style={styles.fastMovingStepperBtn} hitSlop={4}>
-                          {qty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
-                        </Pressable>
-                        <Text style={styles.fastMovingQty}>{qty}</Text>
-                        <Pressable onPress={() => incApiProduct(p)} style={styles.fastMovingStepperBtn} hitSlop={4}>
-                          <Text style={styles.stepperGlyph}>+</Text>
-                        </Pressable>
+                      <View style={styles.fastMovingStepperWrap}>
+                        <View style={styles.fastMovingStepper}>
+                          <Pressable onPress={() => decApiProduct(p)} style={styles.fastMovingStepperBtn} hitSlop={4}>
+                            {qty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
+                          </Pressable>
+                          <Text style={styles.fastMovingQty}>{qty}</Text>
+                          <Pressable onPress={() => incApiProduct(p)} style={styles.fastMovingStepperBtn} hitSlop={4}>
+                            <Text style={styles.stepperGlyph}>+</Text>
+                          </Pressable>
+                        </View>
+                        {!!bulkQtyThreshold && qty >= bulkQtyThreshold && (
+                          <Pressable onPress={() => openProduct(p)}>
+                            <Text style={styles.fastMovingBulkNudge}>Buy in bulk on product page</Text>
+                          </Pressable>
+                        )}
                       </View>
                     ) : (
                       <Pressable onPress={() => addApiProduct(p)} style={styles.fastMovingAdd}>
@@ -329,6 +336,7 @@ export default function HomeScreen() {
                     onDec={() => decApiProduct(p)}
                     onLogin={goLogin}
                     onSelectOption={() => setVariantSheetProduct(p)}
+                    bulkQtyThreshold={bulkQtyThreshold}
                   />
                 ))}
               </ScrollView>
@@ -398,6 +406,7 @@ export default function HomeScreen() {
                   onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
                   onSelectOption={() => setVariantSheetProduct(p)}
+                  bulkQtyThreshold={bulkQtyThreshold}
                 />
               ))}
             </ScrollView>
@@ -436,6 +445,7 @@ export default function HomeScreen() {
                   onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
                   onSelectOption={() => setVariantSheetProduct(p)}
+                  bulkQtyThreshold={bulkQtyThreshold}
                 />
               ))}
             </ScrollView>
@@ -495,6 +505,7 @@ export default function HomeScreen() {
                   onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
                   onSelectOption={() => setVariantSheetProduct(p)}
+                  bulkQtyThreshold={bulkQtyThreshold}
                 />
               ))}
             </ScrollView>
@@ -530,6 +541,7 @@ export default function HomeScreen() {
                   onDec={() => decApiProduct(p)}
                   onLogin={goLogin}
                   onSelectOption={() => setVariantSheetProduct(p)}
+                  bulkQtyThreshold={bulkQtyThreshold}
                 />
               ))}
             </ScrollView>
@@ -750,6 +762,17 @@ const styles = StyleSheet.create({
   fastMovingStepper: { flexDirection: 'row', alignItems: 'center', height: 40, borderRadius: dsRadii.button, backgroundColor: ds.primarySoft },
   fastMovingStepperBtn: { width: 36, height: 40, alignItems: 'center', justifyContent: 'center' },
   fastMovingQty: { minWidth: 24, textAlign: 'center', fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk },
+  fastMovingStepperWrap: { flexShrink: 0, alignItems: 'center' },
+  fastMovingBulkNudge: {
+    marginTop: 6,
+    maxWidth: 104,
+    fontFamily: dsFontFamily[400],
+    fontSize: 11,
+    lineHeight: 14,
+    color: ds.primaryInk,
+    textDecorationLine: 'underline',
+    textAlign: 'center',
+  },
   stepperGlyph: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk },
 
   catalogueBand: {

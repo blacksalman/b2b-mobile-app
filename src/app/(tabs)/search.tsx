@@ -27,7 +27,7 @@ import type { Product } from '@/data/types';
 export default function SearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { cart, loggedIn } = useAppState();
+  const { cart, loggedIn, bulkQtyThreshold } = useAppState();
 
   const [query, setQuery] = useState('');
   const [listening] = useState(false);
@@ -179,6 +179,7 @@ export default function SearchScreen() {
               onDec={() => decApiProduct(p)}
               onLogin={goLogin}
               onSelectOption={() => setVariantSheetProduct(p)}
+              bulkQtyThreshold={bulkQtyThreshold}
             />
           )}
         />

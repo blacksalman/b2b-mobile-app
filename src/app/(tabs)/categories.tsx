@@ -40,6 +40,7 @@ export default function CategoriesScreen() {
   const {
     cart,
     loggedIn,
+    bulkQtyThreshold,
     filterOpen,
     filterTab,
     setFilterOpen,
@@ -258,6 +259,7 @@ export default function CategoriesScreen() {
             onDec={() => decApiProduct(p)}
             onLogin={goLogin}
             onSelectOption={() => setVariantSheetProduct(p)}
+            bulkQtyThreshold={bulkQtyThreshold}
           />
         )}
       />

@@ -176,6 +176,33 @@ export function fetchProductFacets(): Promise<ProductFacets> {
   return storeFetch('/store/product-facets', {});
 }
 
+// GET /store/app-config (src/api/store/app-config/route.ts) - runtime settings the admin's
+// Settings > App Config page controls (Store.metadata), currently just the quantity at which a
+// product card's stepper shows the "buy in bulk on the product page" nudge.
+export interface AppConfig {
+  bulk_qty_threshold: number;
+}
+
+export function fetchAppConfig(): Promise<AppConfig> {
+  return storeFetch('/store/app-config', {});
+}
+
+// GET /store/variants/:id/stock (src/api/store/variants/[id]/stock/route.ts) - a fresh,
+// real-time stock count for the product page's "bulk quantity" input, unlike the app's own
+// cached inStock boolean (homeApi.ts) which only ever means ">0 somewhere", not an actual count.
+// `unlimited` (variant not inventory-tracked, or backorder allowed) means any quantity is fine -
+// `available` is meaningless (null) in that case.
+export interface VariantStock {
+  manage_inventory: boolean;
+  allow_backorder: boolean;
+  unlimited: boolean;
+  available: number | null;
+}
+
+export function fetchVariantStock(variantId: string): Promise<VariantStock> {
+  return storeFetch(`/store/variants/${variantId}/stock`, {});
+}
+
 // Admin-curated brand groups (Operations > Brand Sections in admin) - same curation mechanism as
 // category-sections/product-sections, just holding collection ids instead. Backs the Home
 // screen's "Brands" rail (slug "home-brands") so it shows only the brands an admin picked instead

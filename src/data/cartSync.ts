@@ -48,6 +48,14 @@ export function registerApiProductVariant(hashId: number, variantId: string): vo
   variantIdByHashId.set(hashId, variantId);
 }
 
+// Read side of the map above - backs the product page's bulk-quantity input (product/[id].tsx),
+// which needs the real Medusa variant id to ask GET /store/variants/:id/stock for an actual
+// count. Returns undefined for a mock product (never registered) or before registration has
+// happened yet (a fresh card that hasn't rendered/decorated once).
+export function getVariantIdByHashId(hashId: number): string | undefined {
+  return variantIdByHashId.get(hashId);
+}
+
 // Called by Cart's own +/-/remove (cartApi.ts's updateQuantity) right after a successful real
 // mutation - that call site writes to the real cart directly (its own line-item id, not a
 // hashId/variantId lookup) and never went through this module at all, so this cache had no way

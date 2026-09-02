@@ -59,7 +59,7 @@ interface VariantSheetProps {
 // AppStateContext cart every other Add/Inc/Dec in the app already uses.
 export function VariantSheet({ visible, product, onClose }: VariantSheetProps) {
   const insets = useSafeAreaInsets();
-  const { cart, loggedIn } = useAppState();
+  const { cart, loggedIn, bulkQtyThreshold } = useAppState();
   const { addApiProduct, incApiProduct, decApiProduct } = useApiCartActions();
 
   const rows = useMemo(() => {
@@ -129,14 +129,19 @@ export function VariantSheet({ visible, product, onClose }: VariantSheetProps) {
                       <Text style={styles.outOfStockButtonText}>Out of stock</Text>
                     </View>
                   ) : row.cartQty > 0 ? (
-                    <View style={styles.stepper}>
-                      <Pressable onPress={() => decApiProduct(row)} style={styles.stepperBtn} hitSlop={4}>
-                        {row.cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
-                      </Pressable>
-                      <Text style={styles.stepperQty}>{row.cartQty}</Text>
-                      <Pressable onPress={() => incApiProduct(row)} style={styles.stepperBtn} hitSlop={4}>
-                        <Text style={styles.stepperGlyph}>+</Text>
-                      </Pressable>
+                    <View style={styles.stepperWrap}>
+                      <View style={styles.stepper}>
+                        <Pressable onPress={() => decApiProduct(row)} style={styles.stepperBtn} hitSlop={4}>
+                          {row.cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
+                        </Pressable>
+                        <Text style={styles.stepperQty}>{row.cartQty}</Text>
+                        <Pressable onPress={() => incApiProduct(row)} style={styles.stepperBtn} hitSlop={4}>
+                          <Text style={styles.stepperGlyph}>+</Text>
+                        </Pressable>
+                      </View>
+                      {!!bulkQtyThreshold && row.cartQty >= bulkQtyThreshold && (
+                        <Text style={styles.bulkNudge}>Buy in bulk on product page</Text>
+                      )}
                     </View>
                   ) : (
                     <Pressable onPress={() => addApiProduct(row)} style={styles.addButton}>
@@ -233,6 +238,17 @@ const styles = StyleSheet.create({
   stepperBtn: { width: 36, height: 40, alignItems: 'center', justifyContent: 'center' },
   stepperGlyph: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk },
   stepperQty: { minWidth: 24, textAlign: 'center', fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk, fontVariant: ['tabular-nums'] },
+  stepperWrap: { flexShrink: 0, alignItems: 'center' },
+  bulkNudge: {
+    marginTop: 6,
+    maxWidth: 104,
+    fontFamily: dsFontFamily[400],
+    fontSize: 11,
+    lineHeight: 14,
+    color: ds.primaryInk,
+    textDecorationLine: 'underline',
+    textAlign: 'center',
+  },
   addButton: {
     flexShrink: 0,
     height: 40,

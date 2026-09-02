@@ -5,6 +5,12 @@ import { computeCartTotals, type CartTotals } from '@/data/cartTotals';
 import { hydrateCartState } from '@/data/cartSync';
 import { hydrateToken, fetchCurrentCustomer, logout as logoutCustomer, type MedusaCustomer } from '@/lib/medusaAuth';
 import { hydrateTaxRates } from '@/data/taxRates';
+import { fetchAppConfig } from '@/lib/medusaClient';
+
+// Fallback used until the real GET /store/app-config fetch resolves (or if it fails) - matches
+// the backend's own DEFAULT_THRESHOLD (src/api/store/app-config/route.ts) so there's no visible
+// jump once the real value arrives in the common case where nobody's changed it from the default.
+const DEFAULT_BULK_QTY_THRESHOLD = 10;
 
 export type FilterMultiKind = 'avail' | 'brand' | 'ing' | 'concern' | 'form';
 
@@ -47,6 +53,7 @@ interface AppState {
   filters: FilterSelections;
   filterOpen: boolean;
   filterTab: FilterTabName;
+  bulkQtyThreshold: number;
 }
 
 const initialState: AppState = {
@@ -58,14 +65,19 @@ const initialState: AppState = {
   filters: DEFAULT_FILTERS,
   filterOpen: false,
   filterTab: 'Brand',
+  bulkQtyThreshold: DEFAULT_BULK_QTY_THRESHOLD,
 };
 
 type Action =
   | { type: 'ADD_TO_CART'; id: number; qty: number }
   | { type: 'INC'; id: number }
   | { type: 'DEC'; id: number }
+  // Absolute set (not relative like INC/DEC/ADD_TO_CART) - backs the product page's bulk-quantity
+  // input, where the user types an exact number rather than tapping +/- repeatedly.
+  | { type: 'SET_QTY'; id: number; qty: number }
   | { type: 'REMOVE_FROM_CART'; id: number }
   | { type: 'SET_CART'; cart: CartState }
+  | { type: 'SET_BULK_QTY_THRESHOLD'; value: number }
   | { type: 'CLEAR_CART' }
   | { type: 'SET_LOGGED_IN'; value: boolean }
   | { type: 'SET_CUSTOMER'; customer: MedusaCustomer | null }
@@ -100,6 +112,10 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, cart: {} };
     case 'DEC':
       return { ...state, cart: { ...state.cart, [action.id]: Math.max(0, (state.cart[action.id] || 0) - 1) } };
+    case 'SET_QTY':
+      return { ...state, cart: { ...state.cart, [action.id]: Math.max(0, action.qty) } };
+    case 'SET_BULK_QTY_THRESHOLD':
+      return { ...state, bulkQtyThreshold: action.value };
     case 'REMOVE_FROM_CART':
       return { ...state, cart: { ...state.cart, [action.id]: 0 } };
     case 'SET_LOGGED_IN':
@@ -137,6 +153,7 @@ interface AppStateContextValue extends AppState {
   addToCart: (id: number, qty: number) => void;
   inc: (id: number) => void;
   dec: (id: number) => void;
+  setQty: (id: number, qty: number) => void;
   removeFromCart: (id: number) => void;
   clearCart: () => void;
   setLoggedIn: (value: boolean) => void;
@@ -188,6 +205,22 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     hydrateTaxRates();
   }, []);
 
+  // Admin-configurable bulk-order nudge threshold (Settings > App Config) - fetched once here,
+  // same "global config, one fetch, everything reads the cached value" shape as GST rates above,
+  // rather than every product card fetching it independently. Silently keeps the
+  // DEFAULT_BULK_QTY_THRESHOLD fallback already in initialState on failure.
+  useEffect(() => {
+    let cancelled = false;
+    fetchAppConfig()
+      .then((config) => {
+        if (!cancelled) dispatch({ type: 'SET_BULK_QTY_THRESHOLD', value: config.bulk_qty_threshold });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Restore the real customer session (see medusaAuth.ts) - a no-op (stays logged out) when
   // there's no stored token yet, or when the stored token has since expired/been invalidated
   // (fetchCurrentCustomer clears a bad token itself and resolves null).
@@ -212,6 +245,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const addToCart = useCallback((id: number, qty: number) => dispatch({ type: 'ADD_TO_CART', id, qty }), []);
   const inc = useCallback((id: number) => dispatch({ type: 'INC', id }), []);
   const dec = useCallback((id: number) => dispatch({ type: 'DEC', id }), []);
+  const setQty = useCallback((id: number, qty: number) => dispatch({ type: 'SET_QTY', id, qty }), []);
   const removeFromCart = useCallback((id: number) => dispatch({ type: 'REMOVE_FROM_CART', id }), []);
   const clearCart = useCallback(() => dispatch({ type: 'CLEAR_CART' }), []);
   const setLoggedIn = useCallback((value: boolean) => dispatch({ type: 'SET_LOGGED_IN', value }), []);
@@ -272,6 +306,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       addToCart,
       inc,
       dec,
+      setQty,
       removeFromCart,
       clearCart,
       setLoggedIn,
@@ -294,6 +329,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       addToCart,
       inc,
       dec,
+      setQty,
       removeFromCart,
       clearCart,
       setLoggedIn,

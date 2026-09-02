@@ -50,6 +50,7 @@ export default function ListingScreen() {
     inc,
     dec,
     flash,
+    bulkQtyThreshold,
     filters,
     filterOpen,
     filterTab,
@@ -181,6 +182,7 @@ export default function ListingScreen() {
                 onDec={() => (isReal ? decApiProduct(p) : dec(p.id))}
                 onLogin={goLogin}
                 onSelectOption={() => setVariantSheetProduct(p)}
+                bulkQtyThreshold={bulkQtyThreshold}
               />
             ))}
           </View>
