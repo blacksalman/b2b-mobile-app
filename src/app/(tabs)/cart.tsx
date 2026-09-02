@@ -156,8 +156,11 @@ export default function CartScreen() {
         )}
       </ScrollView>
 
+      {/* The footer takes no insets.bottom: the TabBar below it already pads for the home
+          indicator (TabBar.tsx), so adding it here only made the bar bottom-heavy. Symmetric
+          padding lives in styles.footer, same as the PDP's add-to-cart bar. */}
       {!loading && cartHasItems && (
-        <View style={[styles.footer, { paddingBottom: dsSpacing.md + insets.bottom }]}>
+        <View style={styles.footer}>
           <View style={styles.footerInfo}>
             <Text style={styles.footerCount} numberOfLines={1}>{itemCount} items</Text>
             <Text style={styles.footerTotal} numberOfLines={1}>{totalLabel}</Text>
@@ -219,7 +222,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: ds.line,
     paddingHorizontal: dsSpacing.lg,
-    paddingTop: dsSpacing.md,
+    paddingVertical: dsSpacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -229,9 +232,12 @@ const styles = StyleSheet.create({
   footerInfo: { minWidth: 0 },
   footerCount: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2 },
   footerTotal: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.primaryInk },
+  // 48 high, like every other primary CTA in the app (the PDP's addBarButton it sits directly
+  // opposite in the same sticky-footer role, checkout's centerButton, the reviews submit button)
+  // - 40 made the cart's main action read as the one undersized button in the flow.
   checkoutButton: {
     flexShrink: 0,
-    height: 40,
+    height: 48,
     borderRadius: dsRadii.button,
     backgroundColor: ds.primaryStrong,
     flexDirection: 'row',

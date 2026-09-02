@@ -115,14 +115,12 @@ export function VariantSheet({ visible, product, onClose }: VariantSheetProps) {
                   <View style={styles.packInfo}>
                     <Text style={styles.packLabel} numberOfLines={1}>{row.cs}</Text>
                     <View style={styles.priceRow}>
-                      {hasDiscount ? (
-                        <>
-                          <Text style={styles.priceGreen}>{row.priceLabel}</Text>
-                          <Text style={styles.mrpText}>{row.compareLabel}</Text>
-                        </>
-                      ) : (
-                        <Text style={styles.priceDark}>{row.priceLabel}</Text>
-                      )}
+                      {/* One price colour whether or not the pack is discounted - DsProductCard
+                          renders every price in primaryInk, and a discounted/undiscounted split
+                          here made the same product's price change colour between the card and
+                          this sheet. Only the struck MRP is conditional. */}
+                      <Text style={styles.price}>{row.priceLabel}</Text>
+                      {hasDiscount && <Text style={styles.mrpText}>{row.compareLabel}</Text>}
                     </View>
                   </View>
 
@@ -222,8 +220,7 @@ const styles = StyleSheet.create({
   packInfo: { flex: 1, minWidth: 0 },
   packLabel: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
   priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: dsSpacing.sm },
-  priceGreen: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.primaryInk, fontVariant: ['tabular-nums'] },
-  priceDark: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.ink, fontVariant: ['tabular-nums'] },
+  price: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.primaryInk, fontVariant: ['tabular-nums'] },
   mrpText: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, textDecorationLine: 'line-through', fontVariant: ['tabular-nums'] },
   stepper: {
     flexShrink: 0,

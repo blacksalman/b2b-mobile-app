@@ -9,6 +9,7 @@ import { ProductGridSkeleton } from '@/components/ds/ProductGridSkeleton';
 import { FilterSheet } from '@/components/shell/FilterSheet';
 import { VariantSheet } from '@/components/shell/VariantSheet';
 import { countNonSortFilters } from '@/data/categories-content';
+import { RotatingSearchPlaceholder } from '@/components/shell/RotatingSearchPlaceholder';
 import { useAppState } from '@/state/AppStateContext';
 import { useProductCategories, useCategoryProducts, useCollections } from '@/data/categoriesApi';
 import { toRailProduct } from '@/data/homeApi';
@@ -144,13 +145,10 @@ export default function CategoriesScreen() {
         <View style={styles.searchRow}>
           <View style={styles.searchInput}>
             <SearchIcon size={16} color={ds.ink2} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search products or brands"
-              placeholderTextColor={ds.ink2}
-              style={styles.input}
-            />
+            <View style={styles.inputWrap}>
+              <TextInput value={query} onChangeText={setQuery} style={styles.input} />
+              {!hasQuery && <RotatingSearchPlaceholder color={ds.ink2} paused={hasQuery} overlay />}
+            </View>
             {hasQuery && (
               <Pressable onPress={() => setQuery('')} style={styles.clearButton} hitSlop={8}>
                 <CloseIcon size={10} color={ds.ink2} />
@@ -316,13 +314,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: dsSpacing.sm,
-    height: 40,
+    minHeight: 48,
+    paddingVertical: 4,
     paddingHorizontal: dsSpacing.md,
     borderWidth: 1,
     borderColor: ds.lineStrong,
     borderRadius: dsRadii.input,
   },
-  input: { flex: 1, ...dsType.body, padding: 0 },
+  inputWrap: { flex: 1, position: 'relative', justifyContent: 'center' },
+  input: { ...dsType.body, padding: 0 },
   clearButton: { width: 20, height: 20, borderRadius: dsRadii.pill, backgroundColor: ds.line, alignItems: 'center', justifyContent: 'center' },
   rail: { flexGrow: 0 },
   railContent: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingVertical: dsSpacing.md },
@@ -336,7 +336,10 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   bodyContent: { paddingTop: dsSpacing.md, paddingBottom: dsSpacing.xl },
   pillsRow: { flexGrow: 0 },
-  pillsRowContent: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
+  // No paddingTop here: bodyContent's own paddingTop already sits above this row (it's the
+  // list header, inside the content container), so adding another one made the gap above the
+  // pills double the gap below them. Only the bottom gap needs declaring.
+  pillsRowContent: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingBottom: dsSpacing.md },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',

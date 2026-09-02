@@ -1,9 +1,11 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ds, dsFontFamily } from '@/theme';
-import { LeafMarkIcon, HeaderSearchIcon } from '@/icons';
+import { ds } from '@/theme';
+import { HeaderSearchIcon } from '@/icons';
+import { BrandLogo } from '@/components/shell/BrandLogo';
+import { RotatingSearchPlaceholder } from '@/components/shell/RotatingSearchPlaceholder';
 
 // Rebuilt against the new AyurvedaOne design system (`showHeader` block, Various Mobile App - Phone
 // .dc.html line 23-36): flat `canvas` background (no border/shadow), leaf mark + wordmark row, then
@@ -19,12 +21,13 @@ export function Header() {
   return (
     <View style={[styles.container, { paddingTop: insets.top + 12 }]}>
       <Pressable style={styles.brandRow} onPress={() => router.push('/')} hitSlop={8}>
-        <LeafMarkIcon size={22} />
-        <Text style={styles.wordmark}>AYURVEDAONE</Text>
+        <BrandLogo variant="horizontal" width={180} />
       </Pressable>
       <Pressable style={styles.searchBar} onPress={() => router.push('/search')}>
         <HeaderSearchIcon size={16} />
-        <Text style={styles.searchPlaceholder}>Search medicines, brands...</Text>
+        {/* Never paused: this pill is a link to /search, not a real field, so there is no typed
+            text for the animation to sit under. */}
+        <RotatingSearchPlaceholder color={ds.ink2} />
       </Pressable>
     </View>
   );
@@ -42,29 +45,18 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 12,
   },
-  wordmark: {
-    fontFamily: dsFontFamily[700],
-    fontSize: 15,
-    lineHeight: 20,
-    color: ds.primaryInk,
-    letterSpacing: 0.9,
-  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    height: 40,
+    // minHeight, not height: the row grows if the platform's font scale pushes the text past
+    // one line, instead of clipping it.
+    minHeight: 48,
+    paddingVertical: 4,
     paddingHorizontal: 12,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: ds.line,
     backgroundColor: ds.surface,
-  },
-  searchPlaceholder: {
-    fontFamily: dsFontFamily[400],
-    fontSize: 14,
-    lineHeight: 21,
-    color: ds.ink2,
-    flex: 1,
   },
 });

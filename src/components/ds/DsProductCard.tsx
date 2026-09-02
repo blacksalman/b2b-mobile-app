@@ -50,7 +50,7 @@ export const DsProductCard = React.memo(function DsProductCard({ product: p, wid
           // contain, not cover: a cropped product photo (bottle top/label cut off) reads as
           // broken - showing the whole product on its tinted background matches every other
           // real e-commerce listing and is what "contain" is for.
-          <Image source={{ uri: p.thumbnail }} style={[styles.image, outOfStock && styles.imageOutOfStock]} contentFit="contain" />
+          <Image source={{ uri: p.thumbnail }} style={[styles.image, outOfStock && styles.imageOutOfStock]} contentFit="cover" />
         ) : null}
         {/* p.margin was a fabricated per-product placeholder %, unrelated to the real discount
             - replaced with the actual discount (p.discount, e.g. "-5%"), same value/format the
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
   },
   flexCard: { flex: 1, minWidth: 0 },
   imageWrap: {
-    aspectRatio: 4 / 3,
+    aspectRatio: 1 / 0.855,
     backgroundColor: ds.primarySoft,
   },
   image: {

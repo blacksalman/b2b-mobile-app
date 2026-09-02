@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
-import { ArrowRightIcon, CloseIcon, LeafMarkIcon } from '@/icons';
+import { ArrowRightIcon, CloseIcon } from '@/icons';
+import { BrandLogo } from '@/components/shell/BrandLogo';
 import { useAppState } from '@/state/AppStateContext';
 import { sendOtp } from '@/lib/medusaAuth';
 import { toE164 } from '@/lib/phoneFormat';
@@ -27,6 +28,7 @@ export default function AuthPhoneScreen() {
   const { flash } = useAppState();
   const [authPhone, setAuthPhone] = useState('');
   const [sending, setSending] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   const goAccount = () => router.push('/account');
   const onAuthPhone = (v: string) => setAuthPhone(v.replace(/\D/g, '').slice(0, 10));
@@ -54,65 +56,89 @@ export default function AuthPhoneScreen() {
   const openPolicyPrivacy = () => flash('Privacy Policy');
 
   return (
-    <View style={styles.outer}>
-      <View style={styles.top}>
-        <Pressable onPress={goAccount} style={[styles.closeButton, { top: insets.top + 16 }]} hitSlop={4}>
-          <CloseIcon size={14} color={ds.ink} strokeWidth={2.2} />
-        </Pressable>
-        <LeafMarkIcon size={48} />
-        <Text style={styles.wordmark}>AYURVEDAONE</Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={dsType.h1}>Login to continue</Text>
-        <Text style={styles.subtitle}>Access orders, saved addresses, and quick reordering in one smooth flow.</Text>
-
-        <View style={styles.fieldBlock}>
-          <Text style={dsType.label}>Mobile number</Text>
-          <View style={styles.phoneBox}>
-            <Text style={styles.prefix}>+91</Text>
-            <View style={styles.divider} />
-            <TextInput
-              value={authPhone}
-              onChangeText={onAuthPhone}
-              placeholder="Enter your mobile number"
-              placeholderTextColor={ds.ink3}
-              maxLength={10}
-              keyboardType="number-pad"
-              style={styles.input}
-            />
-          </View>
+    // The form card sits at the bottom of the screen, so the number pad covered it outright - you
+    // couldn't see the field you were typing into, let alone the Send button. `padding` lifts the
+    // whole column by the keyboard's height, and the hero above (flex:1) absorbs the shrink.
+    //
+    // "padding" on Android too, deliberately: the usual advice is to leave Android to adjustResize
+    // shrinking the window by itself, but SDK 54 draws edge-to-edge, where the window is NOT
+    // resized and the keyboard simply overlays the content - so without this Android did nothing.
+    <KeyboardAvoidingView style={styles.outer} behavior="padding">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <View style={styles.top}>
+          <Pressable onPress={goAccount} style={[styles.closeButton, { top: insets.top + 16 }]} hitSlop={4}>
+            <CloseIcon size={14} color={ds.ink} strokeWidth={2.2} />
+          </Pressable>
+          <BrandLogo />
         </View>
 
-        <Pressable onPress={submitPhone} disabled={sending} style={[styles.ctaButton, sending && styles.ctaButtonDisabled]}>
-          {sending ? (
-            <ActivityIndicator color={ds.surface} />
-          ) : (
-            <>
-              <Text style={styles.ctaButtonText}>Send verification code</Text>
-              <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
-            </>
-          )}
-        </Pressable>
+        <View style={styles.card}>
+          <Text style={dsType.h1}>Login to continue</Text>
+          <Text style={styles.subtitle}>Access orders, saved addresses, and quick reordering in one smooth flow.</Text>
 
-        <Text style={styles.troubleText}>
-          Having trouble? <Text onPress={openContact} style={styles.troubleLink}>Contact Us</Text>
-        </Text>
-        <Text style={styles.legalText}>
-          By continuing, you agree to our <Text onPress={openPolicyTerms} style={styles.legalLink}>Terms and Conditions</Text> &{' '}
-          <Text onPress={openPolicyPrivacy} style={styles.legalLink}>Privacy Policy</Text>
-        </Text>
-      </View>
+          <View style={styles.fieldBlock}>
+            <Text style={dsType.label}>Mobile number</Text>
+            <View style={styles.phoneBox}>
+              <Text style={styles.prefix}>+91</Text>
+              <View style={styles.divider} />
+              <TextInput
+                value={authPhone}
+                onChangeText={onAuthPhone}
+                placeholder="Enter your mobile number"
+                placeholderTextColor={ds.ink3}
+                maxLength={10}
+                keyboardType="number-pad"
+                style={styles.input}
+                // Belt and braces with the lift above: on a short screen the card can still be
+                // taller than the space the keyboard leaves it, and scrolling to the end brings the
+                // field and the CTA below it into view. Delayed because the keyboard is still
+                // animating on focus, so the scrollable height isn't final yet.
+                onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150)}
+              />
+            </View>
+          </View>
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>© 2026 AyurvedaOne. All Rights Reserved.</Text>
-      </View>
-    </View>
+          <Pressable onPress={submitPhone} disabled={sending} style={[styles.ctaButton, sending && styles.ctaButtonDisabled]}>
+            {sending ? (
+              <ActivityIndicator color={ds.surface} />
+            ) : (
+              <>
+                <Text style={styles.ctaButtonText}>Send verification code</Text>
+                <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
+              </>
+            )}
+          </Pressable>
+
+          <Text style={styles.troubleText}>
+            Having trouble? <Text onPress={openContact} style={styles.troubleLink}>Contact Us</Text>
+          </Text>
+          <Text style={styles.legalText}>
+            By continuing, you agree to our <Text onPress={openPolicyTerms} style={styles.legalLink}>Terms and Conditions</Text> &{' '}
+            <Text onPress={openPolicyPrivacy} style={styles.legalLink}>Privacy Policy</Text>
+          </Text>
+        </View>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>© 2026 AyurvedaOne. All Rights Reserved.</Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  outer: { flex: 1, backgroundColor: ds.inverse },
+  outer: { flex: 1, backgroundColor: ds.canvas },
+  // flexGrow, not flex: with the keyboard down the content must still fill the screen so the
+  // hero's flex:1 pushes the card to the bottom; with it up the content is free to exceed the
+  // remaining height and scroll.
+  scrollContent: { flexGrow: 1 },
   top: {
     flex: 1,
     position: 'relative',
@@ -131,11 +157,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  wordmark: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: 1.8, color: ds.ink, marginTop: dsSpacing.md },
 
   // Off-scale 24px padding, literal from source — same recurring quirk noted in the Checkout round's
   // report (a spacing value 16px off the stated 4/8/12/20/32 scale). Preserved, not normalized.
-  card: { flexShrink: 0, backgroundColor: ds.surface, borderTopLeftRadius: dsRadii.sheet, borderTopRightRadius: dsRadii.sheet, padding: 24, paddingHorizontal: dsSpacing.lg, alignItems: 'center' },
+  card: { flexShrink: 0, backgroundColor: ds.surface, padding: 24, paddingHorizontal: dsSpacing.lg, alignItems: 'center' },
   subtitle: { ...dsType.body, color: ds.ink2, marginTop: dsSpacing.sm, textAlign: 'center' },
   fieldBlock: { marginTop: dsSpacing.lg, alignSelf: 'stretch' },
   phoneBox: {
@@ -175,6 +200,6 @@ const styles = StyleSheet.create({
   legalText: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, marginTop: dsSpacing.md },
   legalLink: { color: ds.primaryInk },
 
-  footer: { flexShrink: 0, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md, paddingBottom: 24, alignItems: 'center' },
+  footer: { flexShrink: 0, backgroundColor: ds.inverse, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md, paddingBottom: 24, alignItems: 'center' },
   footerText: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,.72)' },
 });
