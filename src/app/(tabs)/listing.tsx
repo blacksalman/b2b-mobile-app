@@ -12,7 +12,7 @@ import { VariantSheet } from '@/components/shell/VariantSheet';
 import { getListingProducts } from '@/data/listing-content';
 import { useAppState } from '@/state/AppStateContext';
 import { productById } from '@/data/products';
-import { useCategoryProducts } from '@/data/categoriesApi';
+import { useCategoryProducts, useProductFacets } from '@/data/categoriesApi';
 import { toRailProduct } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { productHref } from '@/data/idHash';
@@ -76,6 +76,8 @@ export default function ListingScreen() {
   // Mock path.
   const ids = useMemo(() => (params.ids ? params.ids.split(',').map(Number).filter((n) => !Number.isNaN(n)) : []), [params.ids]);
   const mockListingProducts = useMemo(() => getListingProducts(ids, cart, loggedIn, query), [ids, cart, loggedIn, query]);
+
+  const productFacets = useProductFacets();
 
   // Real path - sort/price/availability come from the shared filter state same as Categories;
   // brand is force-locked to this page's own collectionId regardless of filters.brand, since a
@@ -203,6 +205,9 @@ export default function ListingScreen() {
         // ignores filters.brand entirely, see realFilters above), so it's hidden rather than
         // shown-but-broken.
         brandOptions={isReal ? [] : undefined}
+        concernOptions={isReal ? productFacets.concerns : undefined}
+        formOptions={isReal ? productFacets.forms : undefined}
+        ingredientOptions={isReal ? productFacets.ingredients : undefined}
       />
     </View>
   );

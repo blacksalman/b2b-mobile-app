@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { searchProducts, fetchProductsByIds, fetchCollections, fetchCategorySections, type MedusaProduct, type MedusaCollection } from '@/lib/medusaClient';
+import { searchProducts, fetchProductsByIds, fetchCollections, fetchCategorySections, fetchProductFacets, type MedusaProduct, type MedusaCollection, type ProductFacets } from '@/lib/medusaClient';
 
 export interface MedusaProductCategory {
   id: string;
@@ -59,6 +59,32 @@ export function useCollections(): MedusaCollection[] {
   }, []);
 
   return collections;
+}
+
+const EMPTY_FACETS: ProductFacets = { concerns: [], ingredients: [], forms: [] };
+
+// Real Concern/Ingredient/Product form chip options, backing the filter sheet's own three
+// sections the same way useCollections above backs Brand - replacing categories-content.ts's
+// static mock lists (concernOptions/ingredientOptions/formOptions) so a value an admin actually
+// tags a product with shows up as a selectable chip.
+export function useProductFacets(): ProductFacets {
+  const [facets, setFacets] = useState(EMPTY_FACETS);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchProductFacets()
+      .then((d) => {
+        if (!cancelled) setFacets(d);
+      })
+      .catch(() => {
+        // Filter sections just stay empty (no chips to pick) - not worth surfacing.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return facets;
 }
 
 // Maps the filter sheet's mock-era sort/price labels onto what GET /store/products-search

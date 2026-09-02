@@ -11,7 +11,7 @@ import { VariantSheet } from '@/components/shell/VariantSheet';
 import { countNonSortFilters } from '@/data/categories-content';
 import { RotatingSearchPlaceholder } from '@/components/shell/RotatingSearchPlaceholder';
 import { useAppState } from '@/state/AppStateContext';
-import { useProductCategories, useCategoryProducts, useCollections } from '@/data/categoriesApi';
+import { useProductCategories, useCategoryProducts, useCollections, useProductFacets } from '@/data/categoriesApi';
 import { toRailProduct } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { productHref } from '@/data/idHash';
@@ -66,6 +66,7 @@ export default function CategoriesScreen() {
 
   const realCollections = useCollections();
   const brandOptions = useMemo(() => realCollections.map((c) => c.title), [realCollections]);
+  const productFacets = useProductFacets();
   // filters.brand holds NAMES (what the sheet displays/toggles) - resolved to real collection
   // ids here since that's the only thing GET /store/products-search's collection_id accepts.
   // Memoized so this array's identity only changes when the actual selection does - it's a
@@ -274,6 +275,9 @@ export default function CategoriesScreen() {
         onToggleMulti={toggleFilterMulti}
         onClear={clearFilters}
         brandOptions={brandOptions}
+        concernOptions={productFacets.concerns}
+        formOptions={productFacets.forms}
+        ingredientOptions={productFacets.ingredients}
         resultCount={productsState.count}
       />
     </View>

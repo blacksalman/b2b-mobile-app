@@ -162,6 +162,20 @@ export function fetchCollections(): Promise<{ collections: MedusaCollection[] }>
   return storeFetch('/store/collections', { limit: '100' });
 }
 
+// GET /store/product-facets (src/api/store/product-facets/route.ts) - the real, catalog-wide
+// set of concern/ingredient/product-form values actually tagged on products (via the admin's
+// "Ingredients, Concerns & Form" widget), replacing the filter sheet's old static mock lists so
+// a value an admin adds shows up as a selectable chip automatically.
+export interface ProductFacets {
+  concerns: string[];
+  ingredients: string[];
+  forms: string[];
+}
+
+export function fetchProductFacets(): Promise<ProductFacets> {
+  return storeFetch('/store/product-facets', {});
+}
+
 // Admin-curated brand groups (Operations > Brand Sections in admin) - same curation mechanism as
 // category-sections/product-sections, just holding collection ids instead. Backs the Home
 // screen's "Brands" rail (slug "home-brands") so it shows only the brands an admin picked instead

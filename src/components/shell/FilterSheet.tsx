@@ -6,10 +6,10 @@ import { CheckThinIcon, CloseIcon } from '@/icons';
 import {
   availOptions,
   brandOptions as mockBrandOptions,
-  concernOptions,
+  concernOptions as mockConcernOptions,
   countNonSortFilters,
-  formOptions,
-  ingredientOptions,
+  formOptions as mockFormOptions,
+  ingredientOptions as mockIngredientOptions,
   priceOptions,
   sortOptions,
   type FilterTabName,
@@ -47,6 +47,12 @@ interface FilterSheetProps {
   // (categories-content.ts's brandOptions, computed from mock products) - optional so Listing
   // (still fully mock, not touched this round) keeps using the mock list unchanged.
   brandOptions?: string[];
+  // Real, catalog-wide values actually tagged on products (useProductFacets) override
+  // categories-content.ts's static mock lists, same optional-override shape as brandOptions -
+  // falls back to the mock lists if a caller doesn't pass these (there is currently none).
+  concernOptions?: string[];
+  formOptions?: string[];
+  ingredientOptions?: string[];
 }
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, the
@@ -65,9 +71,15 @@ export function FilterSheet({
   onClear,
   resultCount,
   brandOptions,
+  concernOptions,
+  formOptions,
+  ingredientOptions,
 }: FilterSheetProps) {
   const insets = useSafeAreaInsets();
   const effectiveBrandOptions = brandOptions ?? mockBrandOptions;
+  const effectiveConcernOptions = concernOptions ?? mockConcernOptions;
+  const effectiveFormOptions = formOptions ?? mockFormOptions;
+  const effectiveIngredientOptions = ingredientOptions ?? mockIngredientOptions;
 
   const filterCount = countNonSortFilters(selections);
   const summaryText = filterCount === 0 ? 'Narrow down the catalogue' : filterCount === 1 ? '1 filter applied' : `${filterCount} filters applied`;
@@ -118,19 +130,19 @@ export function FilterSheet({
           />
           <FilterSection
             title="Concern"
-            options={concernOptions}
+            options={effectiveConcernOptions}
             isSelected={(o) => selections.concern.includes(o)}
             onPick={(o) => onToggleMulti('concern', o)}
           />
           <FilterSection
             title="Product form"
-            options={formOptions}
+            options={effectiveFormOptions}
             isSelected={(o) => selections.form.includes(o)}
             onPick={(o) => onToggleMulti('form', o)}
           />
           <FilterSection
             title="Key ingredient"
-            options={ingredientOptions}
+            options={effectiveIngredientOptions}
             isSelected={(o) => selections.ing.includes(o)}
             onPick={(o) => onToggleMulti('ing', o)}
           />
