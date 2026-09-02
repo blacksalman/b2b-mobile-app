@@ -5,7 +5,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { ArrowRightIcon, CloseIcon } from '@/icons';
 import { BrandLogo } from '@/components/shell/BrandLogo';
+import { PolicySheet } from '@/components/shell/PolicySheet';
 import { useAppState } from '@/state/AppStateContext';
+import { usePolicies } from '@/data/account-content';
 import { sendOtp } from '@/lib/medusaAuth';
 import { toE164 } from '@/lib/phoneFormat';
 
@@ -29,6 +31,9 @@ export default function AuthPhoneScreen() {
   const [authPhone, setAuthPhone] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const { policies } = usePolicies();
+  const [policyKey, setPolicyKey] = useState<string | null>(null);
+  const policy = policyKey ? policies.find((p) => p.key === policyKey) ?? null : null;
 
   const goAccount = () => router.push('/account');
   const onAuthPhone = (v: string) => setAuthPhone(v.replace(/\D/g, '').slice(0, 10));
@@ -51,9 +56,15 @@ export default function AuthPhoneScreen() {
       setSending(false);
     }
   };
-  const openContact = () => flash('Contact Us');
-  const openPolicyTerms = () => flash('Terms & Conditions');
-  const openPolicyPrivacy = () => flash('Privacy Policy');
+  // Previously just fired a toast with the label text instead of actually opening anything (same
+  // bug PolicySheet's own comment describes for checkout.tsx's Return/Shipping rows, fixed there
+  // already but missed here) - real admin-configured content now, same pattern as
+  // account.tsx/checkout.tsx/product/[id].tsx. A key with no configured policy yet is a safe
+  // no-op (PolicySheet stays closed for a null policy), not a crash.
+  const openContact = () => setPolicyKey('contact');
+  const openPolicyTerms = () => setPolicyKey('terms');
+  const openPolicyPrivacy = () => setPolicyKey('privacy');
+  const closePolicy = () => setPolicyKey(null);
 
   return (
     // The form card sits at the bottom of the screen, so the number pad covered it outright - you
@@ -129,6 +140,7 @@ export default function AuthPhoneScreen() {
           <Text style={styles.footerText}>© 2026 AyurvedaOne. All Rights Reserved.</Text>
         </View>
       </ScrollView>
+      <PolicySheet policy={policy} onClose={closePolicy} />
     </KeyboardAvoidingView>
   );
 }

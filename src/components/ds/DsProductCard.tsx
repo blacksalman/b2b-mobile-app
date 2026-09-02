@@ -1,5 +1,5 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { ds, dsFontFamily, dsRadii, dsElevation } from '@/theme';
 import type { RailProduct } from '@/data/home-content';
@@ -10,7 +10,10 @@ interface DsProductCardProps {
   width?: number | `${number}%`; // fixed width for rail cards; '48%' for a 2-col grid; omitted = flex:1
   onOpen: () => void;
   onAdd: () => void;
-  onInc: () => void;
+  // Awaited so the card can show a loading spinner on the + button while a real stock check is
+  // in flight (useApiCartActions' incApiProduct) - the app's own DEC never needs this, only INC
+  // can be rejected for exceeding stock.
+  onInc: () => void | Promise<void>;
   onDec: () => void;
   onLogin: () => void;
   // A real product with more than one Medusa variant (product.realVariants, homeApi.ts) shows an
@@ -48,6 +51,16 @@ export const DsProductCard = React.memo(function DsProductCard({ product: p, wid
   // same as everywhere else in this app that reads real-API-only fields.
   const outOfStock = p.inStock === false;
   const hasVariants = (p.realVariants?.length ?? 0) > 1;
+
+  const [incChecking, setIncChecking] = useState(false);
+  const handleInc = async () => {
+    setIncChecking(true);
+    try {
+      await onInc();
+    } finally {
+      setIncChecking(false);
+    }
+  };
 
   return (
     <View style={[styles.card, width ? { width } : styles.flexCard]}>
@@ -98,12 +111,12 @@ export const DsProductCard = React.memo(function DsProductCard({ product: p, wid
             ) : p.inCart ? (
               <>
                 <View style={styles.stepper}>
-                  <Pressable onPress={onDec} style={styles.stepperBtn} hitSlop={4}>
+                  <Pressable onPress={onDec} style={styles.stepperBtn} hitSlop={4} disabled={incChecking}>
                     {p.cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
                   </Pressable>
                   <Text style={styles.stepperQty}>{p.cartQty}</Text>
-                  <Pressable onPress={onInc} style={styles.stepperBtn} hitSlop={4}>
-                    <Text style={styles.stepperGlyph}>+</Text>
+                  <Pressable onPress={handleInc} style={styles.stepperBtn} hitSlop={4} disabled={incChecking}>
+                    {incChecking ? <ActivityIndicator size="small" color={ds.primaryInk} /> : <Text style={styles.stepperGlyph}>+</Text>}
                   </Pressable>
                 </View>
                 {!!bulkQtyThreshold && p.cartQty >= bulkQtyThreshold && (

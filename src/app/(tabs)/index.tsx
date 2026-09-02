@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsElevation } from '@/theme';
@@ -243,22 +243,13 @@ export default function HomeScreen() {
                       </View>
                     </View>
                     {inCart ? (
-                      <View style={styles.fastMovingStepperWrap}>
-                        <View style={styles.fastMovingStepper}>
-                          <Pressable onPress={() => decApiProduct(p)} style={styles.fastMovingStepperBtn} hitSlop={4}>
-                            {qty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
-                          </Pressable>
-                          <Text style={styles.fastMovingQty}>{qty}</Text>
-                          <Pressable onPress={() => incApiProduct(p)} style={styles.fastMovingStepperBtn} hitSlop={4}>
-                            <Text style={styles.stepperGlyph}>+</Text>
-                          </Pressable>
-                        </View>
-                        {!!bulkQtyThreshold && qty >= bulkQtyThreshold && (
-                          <Pressable onPress={() => openProduct(p)}>
-                            <Text style={styles.fastMovingBulkNudge}>Buy in bulk on product page</Text>
-                          </Pressable>
-                        )}
-                      </View>
+                      <FastMovingStepper
+                        qty={qty}
+                        onInc={() => incApiProduct(p)}
+                        onDec={() => decApiProduct(p)}
+                        showBulkNudge={!!bulkQtyThreshold && qty >= bulkQtyThreshold}
+                        onOpenProduct={() => openProduct(p)}
+                      />
                     ) : (
                       <Pressable onPress={() => addApiProduct(p)} style={styles.fastMovingAdd}>
                         <CartIcon size={14} color={ds.surface} />
@@ -661,6 +652,53 @@ const BrandsRowSkeleton = React.memo(function BrandsRowSkeleton() {
     <View style={styles.brandsRow}>
       <View style={[styles.brandSkeletonCard, { backgroundColor: ds.line }]} />
       <View style={[styles.brandSkeletonCard, { backgroundColor: ds.line }]} />
+    </View>
+  );
+});
+
+// Own component (not inlined in the .map() above) purely so the increment button's loading
+// state (real stock check, useApiCartActions' incApiProduct) can live per-row without a
+// screen-level Set-of-checking-ids - same self-contained pattern DsProductCard's own stepper
+// uses.
+const FastMovingStepper = React.memo(function FastMovingStepper({
+  qty,
+  onInc,
+  onDec,
+  showBulkNudge,
+  onOpenProduct,
+}: {
+  qty: number;
+  onInc: () => void | Promise<void>;
+  onDec: () => void;
+  showBulkNudge: boolean;
+  onOpenProduct: () => void;
+}) {
+  const [incChecking, setIncChecking] = useState(false);
+  const handleInc = async () => {
+    setIncChecking(true);
+    try {
+      await onInc();
+    } finally {
+      setIncChecking(false);
+    }
+  };
+
+  return (
+    <View style={styles.fastMovingStepperWrap}>
+      <View style={styles.fastMovingStepper}>
+        <Pressable onPress={onDec} style={styles.fastMovingStepperBtn} hitSlop={4} disabled={incChecking}>
+          {qty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
+        </Pressable>
+        <Text style={styles.fastMovingQty}>{qty}</Text>
+        <Pressable onPress={handleInc} style={styles.fastMovingStepperBtn} hitSlop={4} disabled={incChecking}>
+          {incChecking ? <ActivityIndicator size="small" color={ds.primaryInk} /> : <Text style={styles.stepperGlyph}>+</Text>}
+        </Pressable>
+      </View>
+      {showBulkNudge && (
+        <Pressable onPress={onOpenProduct}>
+          <Text style={styles.fastMovingBulkNudge}>Buy in bulk on product page</Text>
+        </Pressable>
+      )}
     </View>
   );
 });

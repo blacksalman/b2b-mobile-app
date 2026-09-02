@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -37,6 +37,7 @@ import {
   productSpecsFor,
 } from '@/data/product-detail-content';
 import { money } from '@/utils/money';
+import { stripHtml } from '@/utils/stripHtml';
 import { useAppState } from '@/state/AppStateContext';
 import { StubScreen } from '@/components/shell/StubScreen';
 import { useProductDetail } from '@/data/productDetailApi';
@@ -51,37 +52,6 @@ import { PolicySheet } from '@/components/shell/PolicySheet';
 import { timeAgo } from '@/utils/timeAgo';
 import type { Product } from '@/data/types';
 import type { RailProduct } from '@/data/home-content';
-
-// Strips the real product's HTML description (from Medusa's rich-text product.description)
-// down to plain text for this design's plain <Text> body - no HTML renderer/WebView dependency
-// added just for this. The source data itself stores literal "\n"/"\r\n" text (a backslash
-// followed by a letter, not an actual line break - confirmed by inspecting the raw API
-// response) inside the HTML, which is why a plain whitespace-collapse alone left visible "\n\n"
-// in the rendered text; those literal escape sequences need stripping same as the HTML tags do.
-//
-// Block-level tags are converted to real line breaks BEFORE the rest are stripped, so a plain
-// <Text> (which does render \n) still shows paragraphs/headings/list items on their own lines
-// instead of one unbroken run-on paragraph - confirmed live that's what a naive strip-everything
-// pass produced for this store's real descriptions (headings running straight into body copy,
-// "✔" bullets back-to-back with no separation).
-function stripHtml(html: string): string {
-  return html
-    .replace(/\\r\\n|\\n|\\r/g, '\n')
-    .replace(/<li[^>]*>/gi, '\n• ')
-    .replace(/<\/(p|div|h[1-6]|li)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/[ \t]+/g, ' ')
-    .replace(/ *\n */g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
 
 const TRUST_BADGES = [
   { name: 'GST Invoice', Icon: GstInvoiceIcon },
@@ -169,6 +139,8 @@ export default function ProductScreen() {
   const [bulkQtyInput, setBulkQtyInput] = useState('');
   const [bulkQtyStatus, setBulkQtyStatus] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
   const [bulkQtyChecking, setBulkQtyChecking] = useState(false);
+  // Sticky add-bar's own +/- stepper (for `active`, not a rail card - see incMain below).
+  const [mainIncChecking, setMainIncChecking] = useState(false);
   // Variant picker (product id 2 only) — screen-local, matching the pre-existing precedent in this
   // app (VariantSheet/Categories already keep `variantCart` screen-local, not global).
   const [variantPick, setVariantPick] = useState(0);
@@ -269,6 +241,11 @@ export default function ProductScreen() {
   const closePolicy = () => setPolicyKey(null);
   const policy = policyKey ? policies.find((p) => p.key === policyKey) ?? null : null;
   const playBrandVideo = () => flash('Playing brand video');
+  // The Policies section below only shows a row for a policy an admin has actually configured
+  // (Operations > Policies) - previously rendered both rows unconditionally with hardcoded
+  // summary copy that never reflected the real, admin-editable content at all.
+  const returnsPolicy = policies.find((p) => p.key === 'returns') ?? null;
+  const shippingPolicy = policies.find((p) => p.key === 'shipping') ?? null;
 
   const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
   const addProduct = (pid: number) => {
@@ -351,7 +328,30 @@ export default function ProductScreen() {
     addToCart(active.id, 1);
     if (isReal) syncCartQuantity(active.id, cartQty + 1);
   };
-  const incMain = () => {
+  // A real, per-tap stock check (not the cached inStock boolean) before actually incrementing -
+  // same check the rail cards' own incApiProduct does, duplicated here since this stepper works
+  // off `active` directly rather than going through useApiCartActions (see its own comment on
+  // why productAdd/decMain do the same). `mainIncChecking` drives the sticky bar's own spinner.
+  const incMain = async () => {
+    if (isReal) {
+      const variantId = getVariantIdByHashId(active.id);
+      if (variantId) {
+        setMainIncChecking(true);
+        try {
+          const stock = await fetchVariantStock(variantId);
+          const nextQty = cartQty + 1;
+          if (!stock.unlimited && (stock.available ?? 0) < nextQty) {
+            flash(`Only ${stock.available ?? 0} in stock`);
+            return;
+          }
+        } catch {
+          // Stock check itself failed - fall through and allow the increment rather than
+          // blocking the user over a transient error unrelated to stock.
+        } finally {
+          setMainIncChecking(false);
+        }
+      }
+    }
     inc(active.id);
     if (isReal) syncCartQuantity(active.id, cartQty + 1);
   };
@@ -815,29 +815,41 @@ export default function ProductScreen() {
           </>
         )}
 
-        <View style={styles.sectionHeaderBlock}>
-          <Text style={styles.sectionTitle}>Policies</Text>
-          <Text style={styles.sectionSubtitle}>Returns, refunds and delivery terms</Text>
-        </View>
-        <View style={styles.card}>
-          <Text style={styles.policyHeading}>Return, refund &amp; cancellation</Text>
-          <Text style={styles.policyBody}>
-            Eligible returns accepted within 10 days of delivery for unused, unopened products in original packaging. Orders may be cancelled before dispatch.
-          </Text>
-          <Pressable onPress={openReturnPolicy} style={styles.learnMore}>
-            <Text style={styles.learnMoreText}>Learn more</Text>
-            <ChevronRightIcon size={12} color={ds.primaryInk} strokeWidth={2.2} />
-          </Pressable>
-          <View style={styles.divider} />
-          <Text style={styles.policyHeading}>Shipping &amp; delivery</Text>
-          <Text style={styles.policyBody}>
-            Delivered within 2–3 business days, shipping shown at checkout. Free delivery on eligible orders above ₹5,000.
-          </Text>
-          <Pressable onPress={openShippingPolicy} style={styles.learnMore}>
-            <Text style={styles.learnMoreText}>Learn more</Text>
-            <ChevronRightIcon size={12} color={ds.primaryInk} strokeWidth={2.2} />
-          </Pressable>
-        </View>
+        {(returnsPolicy || shippingPolicy) && (
+          <>
+            <View style={styles.sectionHeaderBlock}>
+              <Text style={styles.sectionTitle}>Policies</Text>
+              <Text style={styles.sectionSubtitle}>Returns, refunds and delivery terms</Text>
+            </View>
+            <View style={styles.card}>
+              {returnsPolicy && (
+                <>
+                  <Text style={styles.policyHeading}>{returnsPolicy.title}</Text>
+                  <Text style={styles.policyBody} numberOfLines={2}>
+                    {stripHtml(returnsPolicy.body)}
+                  </Text>
+                  <Pressable onPress={openReturnPolicy} style={styles.learnMore}>
+                    <Text style={styles.learnMoreText}>Learn more</Text>
+                    <ChevronRightIcon size={12} color={ds.primaryInk} strokeWidth={2.2} />
+                  </Pressable>
+                </>
+              )}
+              {returnsPolicy && shippingPolicy && <View style={styles.divider} />}
+              {shippingPolicy && (
+                <>
+                  <Text style={styles.policyHeading}>{shippingPolicy.title}</Text>
+                  <Text style={styles.policyBody} numberOfLines={2}>
+                    {stripHtml(shippingPolicy.body)}
+                  </Text>
+                  <Pressable onPress={openShippingPolicy} style={styles.learnMore}>
+                    <Text style={styles.learnMoreText}>Learn more</Text>
+                    <ChevronRightIcon size={12} color={ds.primaryInk} strokeWidth={2.2} />
+                  </Pressable>
+                </>
+              )}
+            </View>
+          </>
+        )}
 
         <View style={styles.sectionHeaderBlock}>
           <Text style={styles.sectionTitle}>About the manufacturer</Text>
@@ -896,12 +908,12 @@ export default function ProductScreen() {
           </View>
         ) : inCart ? (
           <View style={styles.addBarStepper}>
-            <Pressable onPress={decMain} style={styles.addBarStepBtn} hitSlop={4}>
+            <Pressable onPress={decMain} style={styles.addBarStepBtn} hitSlop={4} disabled={mainIncChecking}>
               {cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepGlyph}>−</Text>}
             </Pressable>
             <Text style={styles.stepQty}>{cartQty}</Text>
-            <Pressable onPress={incMain} style={styles.addBarStepBtn} hitSlop={4}>
-              <Text style={styles.stepGlyph}>+</Text>
+            <Pressable onPress={incMain} style={styles.addBarStepBtn} hitSlop={4} disabled={mainIncChecking}>
+              {mainIncChecking ? <ActivityIndicator size="small" color={ds.primaryInk} /> : <Text style={styles.stepGlyph}>+</Text>}
             </Pressable>
           </View>
         ) : (

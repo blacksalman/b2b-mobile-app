@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CartIcon, CloseIcon, TrashIcon } from '@/icons';
@@ -129,20 +129,12 @@ export function VariantSheet({ visible, product, onClose }: VariantSheetProps) {
                       <Text style={styles.outOfStockButtonText}>Out of stock</Text>
                     </View>
                   ) : row.cartQty > 0 ? (
-                    <View style={styles.stepperWrap}>
-                      <View style={styles.stepper}>
-                        <Pressable onPress={() => decApiProduct(row)} style={styles.stepperBtn} hitSlop={4}>
-                          {row.cartQty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
-                        </Pressable>
-                        <Text style={styles.stepperQty}>{row.cartQty}</Text>
-                        <Pressable onPress={() => incApiProduct(row)} style={styles.stepperBtn} hitSlop={4}>
-                          <Text style={styles.stepperGlyph}>+</Text>
-                        </Pressable>
-                      </View>
-                      {!!bulkQtyThreshold && row.cartQty >= bulkQtyThreshold && (
-                        <Text style={styles.bulkNudge}>Buy in bulk on product page</Text>
-                      )}
-                    </View>
+                    <VariantStepper
+                      qty={row.cartQty}
+                      onInc={() => incApiProduct(row)}
+                      onDec={() => decApiProduct(row)}
+                      showBulkNudge={!!bulkQtyThreshold && row.cartQty >= bulkQtyThreshold}
+                    />
                   ) : (
                     <Pressable onPress={() => addApiProduct(row)} style={styles.addButton}>
                       <CartIcon size={14} color={ds.surface} />
@@ -158,6 +150,46 @@ export function VariantSheet({ visible, product, onClose }: VariantSheetProps) {
     </Modal>
   );
 }
+
+// Own component (not inlined in the .map() above) purely so the increment button's loading
+// state (real stock check, useApiCartActions' incApiProduct) can live per-row - same
+// self-contained pattern DsProductCard's own stepper uses.
+const VariantStepper = React.memo(function VariantStepper({
+  qty,
+  onInc,
+  onDec,
+  showBulkNudge,
+}: {
+  qty: number;
+  onInc: () => void | Promise<void>;
+  onDec: () => void;
+  showBulkNudge: boolean;
+}) {
+  const [incChecking, setIncChecking] = useState(false);
+  const handleInc = async () => {
+    setIncChecking(true);
+    try {
+      await onInc();
+    } finally {
+      setIncChecking(false);
+    }
+  };
+
+  return (
+    <View style={styles.stepperWrap}>
+      <View style={styles.stepper}>
+        <Pressable onPress={onDec} style={styles.stepperBtn} hitSlop={4} disabled={incChecking}>
+          {qty <= 1 ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepperGlyph}>−</Text>}
+        </Pressable>
+        <Text style={styles.stepperQty}>{qty}</Text>
+        <Pressable onPress={handleInc} style={styles.stepperBtn} hitSlop={4} disabled={incChecking}>
+          {incChecking ? <ActivityIndicator size="small" color={ds.primaryInk} /> : <Text style={styles.stepperGlyph}>+</Text>}
+        </Pressable>
+      </View>
+      {showBulkNudge && <Text style={styles.bulkNudge}>Buy in bulk on product page</Text>}
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(12,71,51,.45)' },

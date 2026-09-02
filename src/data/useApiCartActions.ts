@@ -1,5 +1,6 @@
 import { useAppState } from '@/state/AppStateContext';
-import { syncCartQuantity } from './cartSync';
+import { syncCartQuantity, getVariantIdByHashId } from './cartSync';
+import { fetchVariantStock } from '@/lib/medusaClient';
 import type { DecoratedProduct } from './types';
 
 function addFlashLabel(name: string): string {
@@ -25,7 +26,27 @@ export function useApiCartActions() {
     flash(addFlashLabel(p.name));
     syncCartQuantity(p.id, p.cartQty + 1);
   };
-  const incApiProduct = (p: DecoratedProduct) => {
+  // A real, per-tap stock check (not the app's own cached inStock boolean, which only ever means
+  // ">0 somewhere") - the previous version incremented unconditionally, letting a customer tap +
+  // past what's actually available. `await`-able so the caller (DsProductCard etc.) can show a
+  // loading state on the stepper while this is in flight; returns nothing useful itself since
+  // the reject case is already surfaced via flash() here, same toast mechanism as every other
+  // message in this app - the caller only needs to know when the promise settles.
+  const incApiProduct = async (p: DecoratedProduct) => {
+    const variantId = getVariantIdByHashId(p.id);
+    if (variantId) {
+      try {
+        const stock = await fetchVariantStock(variantId);
+        const nextQty = p.cartQty + 1;
+        if (!stock.unlimited && (stock.available ?? 0) < nextQty) {
+          flash(`Only ${stock.available ?? 0} in stock`);
+          return;
+        }
+      } catch {
+        // Stock check itself failed (network hiccup, etc.) - fall through and allow the
+        // increment rather than blocking the user over a transient error unrelated to stock.
+      }
+    }
     inc(p.id);
     syncCartQuantity(p.id, p.cartQty + 1);
   };

@@ -29,6 +29,7 @@ import {
 import { RAZORPAY_KEY_ID } from '@/lib/medusaClient';
 import { fetchAddresses, type MedusaAddress } from '@/lib/medusaAddresses';
 import { money } from '@/utils/money';
+import { stripHtml } from '@/utils/stripHtml';
 import { RazorpayCheckoutModal } from '@/components/composite/RazorpayCheckoutModal';
 import { PolicySheet } from '@/components/shell/PolicySheet';
 import { usePolicies } from '@/data/account-content';
@@ -249,6 +250,10 @@ export default function CheckoutScreen() {
   const openShippingPolicy = () => setPolicyKey('shipping');
   const closePolicy = () => setPolicyKey(null);
   const policy = policyKey ? policies.find((p) => p.key === policyKey) ?? null : null;
+  // Same fix as product/[id].tsx's own Policies section - only show a row for a policy an admin
+  // has actually configured, with its real title/summary instead of hardcoded fake copy.
+  const returnsPolicy = policies.find((p) => p.key === 'returns') ?? null;
+  const shippingPolicy = policies.find((p) => p.key === 'shipping') ?? null;
 
   if (!loggedIn) {
     return (
@@ -386,31 +391,44 @@ export default function CheckoutScreen() {
           </View>
         </View>
 
-        <View>
-          <Text style={[styles.sectionTitle, styles.sectionTitleSpaced]}>Policies</Text>
-          <View style={styles.policiesCard}>
-            <Pressable onPress={openReturnPolicy} style={[styles.policyRow, styles.policyRowBorder]}>
-              <View style={styles.policyIcon}>
-                <ReturnPolicyIcon size={18} color={ds.primaryInk} />
-              </View>
-              <View style={styles.policyText}>
-                <Text style={styles.policyTitle}>Return, refund & cancellation</Text>
-                <Text style={styles.policySubtitle}>Eligible returns within 10 days of delivery</Text>
-              </View>
-              <ChevronRightIcon size={16} color={ds.ink3} strokeWidth={1.8} />
-            </Pressable>
-            <Pressable onPress={openShippingPolicy} style={styles.policyRow}>
-              <View style={styles.policyIcon}>
-                <ShippingBoxIcon size={18} color={ds.primaryInk} />
-              </View>
-              <View style={styles.policyText}>
-                <Text style={styles.policyTitle}>Shipping & delivery</Text>
-                <Text style={styles.policySubtitle}>Delivered in 2–3 business days</Text>
-              </View>
-              <ChevronRightIcon size={16} color={ds.ink3} strokeWidth={1.8} />
-            </Pressable>
+        {(returnsPolicy || shippingPolicy) && (
+          <View>
+            <Text style={[styles.sectionTitle, styles.sectionTitleSpaced]}>Policies</Text>
+            <View style={styles.policiesCard}>
+              {returnsPolicy && (
+                <Pressable
+                  onPress={openReturnPolicy}
+                  style={[styles.policyRow, !!shippingPolicy && styles.policyRowBorder]}
+                >
+                  <View style={styles.policyIcon}>
+                    <ReturnPolicyIcon size={18} color={ds.primaryInk} />
+                  </View>
+                  <View style={styles.policyText}>
+                    <Text style={styles.policyTitle}>{returnsPolicy.title}</Text>
+                    <Text style={styles.policySubtitle} numberOfLines={1}>
+                      {stripHtml(returnsPolicy.body)}
+                    </Text>
+                  </View>
+                  <ChevronRightIcon size={16} color={ds.ink3} strokeWidth={1.8} />
+                </Pressable>
+              )}
+              {shippingPolicy && (
+                <Pressable onPress={openShippingPolicy} style={styles.policyRow}>
+                  <View style={styles.policyIcon}>
+                    <ShippingBoxIcon size={18} color={ds.primaryInk} />
+                  </View>
+                  <View style={styles.policyText}>
+                    <Text style={styles.policyTitle}>{shippingPolicy.title}</Text>
+                    <Text style={styles.policySubtitle} numberOfLines={1}>
+                      {stripHtml(shippingPolicy.body)}
+                    </Text>
+                  </View>
+                  <ChevronRightIcon size={16} color={ds.ink3} strokeWidth={1.8} />
+                </Pressable>
+              )}
+            </View>
           </View>
-        </View>
+        )}
       </ScrollView>
 
       {/* No insets.bottom: the TabBar below this bar already pads for the home indicator
