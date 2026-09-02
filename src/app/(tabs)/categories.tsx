@@ -79,8 +79,16 @@ export default function CategoriesScreen() {
     [filters.brand, realCollections]
   );
   const categoryFilters = useMemo(
-    () => ({ sort: filters.sort, price: filters.price, avail: filters.avail, brandCollectionIds }),
-    [filters.sort, filters.price, filters.avail, brandCollectionIds]
+    () => ({
+      sort: filters.sort,
+      price: filters.price,
+      avail: filters.avail,
+      brandCollectionIds,
+      concerns: filters.concern,
+      forms: filters.form,
+      ingredients: filters.ing,
+    }),
+    [filters.sort, filters.price, filters.avail, brandCollectionIds, filters.concern, filters.form, filters.ing]
   );
   const productsState = useCategoryProducts(categoryId, query, categoryFilters);
   const reviewSummaries = useReviewSummaries(useMemo(() => productsState.results.map((p) => p.id), [productsState.results]));

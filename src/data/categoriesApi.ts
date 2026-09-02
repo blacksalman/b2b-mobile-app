@@ -85,6 +85,11 @@ export interface CategoryFilters {
   // Already resolved from filter-sheet brand NAMES to real collection ids by the caller
   // (categories.tsx) - this hook stays agnostic of how brand names map to collections.
   brandCollectionIds: string[];
+  // Filter-sheet Concern/Product form/Key ingredient selections - unlike brand these are used
+  // as-is (they're already real metadata values, not names needing resolution to another id).
+  concerns: string[];
+  forms: string[];
+  ingredients: string[];
 }
 
 export interface CategoryProductsState {
@@ -138,7 +143,7 @@ export function useCategoryProducts(
   const requestId = useRef(0);
   const offsetRef = useRef(0);
   const loadingMoreRef = useRef(false);
-  const { sort, price, avail, brandCollectionIds } = filters;
+  const { sort, price, avail, brandCollectionIds, concerns, forms, ingredients } = filters;
   const trimmed = query.trim();
   const hasQuery = trimmed.length > 0;
   const priceRange = PRICE_RANGES[price];
@@ -147,6 +152,9 @@ export function useCategoryProducts(
     q: trimmed || undefined,
     categoryId: categoryId ?? undefined,
     collectionId: brandCollectionIds.length ? brandCollectionIds.join(',') : undefined,
+    concerns: concerns.length ? concerns : undefined,
+    forms: forms.length ? forms : undefined,
+    ingredients: ingredients.length ? ingredients : undefined,
     sort: SORT_MAP[sort],
     minPrice: priceRange?.min,
     maxPrice: priceRange?.max,
@@ -195,7 +203,7 @@ export function useCategoryProducts(
 
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, categoryId, query, sort, price, avail, brandCollectionIds]);
+  }, [enabled, categoryId, query, sort, price, avail, brandCollectionIds, concerns, forms, ingredients]);
 
   const loadMore = () => {
     if (!enabled || loadingMoreRef.current || state.loading || !state.hasMore) return;

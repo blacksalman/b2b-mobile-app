@@ -81,8 +81,16 @@ export default function ListingScreen() {
   // brand is force-locked to this page's own collectionId regardless of filters.brand, since a
   // brand-scoped page picking a *different* brand doesn't make sense.
   const realFilters = useMemo(
-    () => ({ sort: filters.sort, price: filters.price, avail: filters.avail, brandCollectionIds: isReal ? [params.collectionId] : [] }),
-    [filters.sort, filters.price, filters.avail, isReal, params.collectionId]
+    () => ({
+      sort: filters.sort,
+      price: filters.price,
+      avail: filters.avail,
+      brandCollectionIds: isReal ? [params.collectionId] : [],
+      concerns: filters.concern,
+      forms: filters.form,
+      ingredients: filters.ing,
+    }),
+    [filters.sort, filters.price, filters.avail, isReal, params.collectionId, filters.concern, filters.form, filters.ing]
   );
   const productsState = useCategoryProducts(null, query, realFilters, isReal);
   const reviewSummaries = useReviewSummaries(useMemo(() => productsState.results.map((p) => p.id), [productsState.results]));

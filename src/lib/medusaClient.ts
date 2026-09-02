@@ -326,6 +326,12 @@ export async function searchProducts(opts: {
   q?: string;
   categoryId?: string;
   collectionId?: string;
+  // Comma-joined-on-the-wire, same convention as collectionId - matched against
+  // metadata.concerns/ingredients (string[]) and metadata.product_form (string) respectively,
+  // set via the admin's "Ingredients, Concerns & Form" product widget.
+  concerns?: string[];
+  ingredients?: string[];
+  forms?: string[];
   sort?: 'price_asc' | 'price_desc' | 'newest' | 'title_asc' | 'title_desc';
   minPrice?: number;
   maxPrice?: number;
@@ -333,12 +339,15 @@ export async function searchProducts(opts: {
   limit?: number;
   offset?: number;
 }): Promise<{ ids: string[]; count: number }> {
-  const { q, categoryId, collectionId, sort, minPrice, maxPrice, inStock, limit = 24, offset = 0 } = opts;
+  const { q, categoryId, collectionId, concerns, ingredients, forms, sort, minPrice, maxPrice, inStock, limit = 24, offset = 0 } = opts;
   const needsRegion = minPrice !== undefined || maxPrice !== undefined || sort === 'price_asc' || sort === 'price_desc';
   const data = await storeFetch<{ products: { id: string }[]; count: number }>('/store/products-search', {
     q,
     category_id: categoryId,
     collection_id: collectionId,
+    concern: concerns?.length ? concerns.join(',') : undefined,
+    ingredient: ingredients?.length ? ingredients.join(',') : undefined,
+    form: forms?.length ? forms.join(',') : undefined,
     sort,
     min_price: minPrice !== undefined ? String(minPrice) : undefined,
     max_price: maxPrice !== undefined ? String(maxPrice) : undefined,
