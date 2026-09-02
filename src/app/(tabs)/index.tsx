@@ -168,8 +168,8 @@ export default function HomeScreen() {
 
         {/* Prescription at a glance */}
         <DsSectionHeader
-          title="Shop by Concern"
-          subtitle="Browse curated Ayurvedic product ranges across key health concerns."
+          title="Shop by Product Form"
+          subtitle="Find products in the format you need."
           actionLabel="View all"
           onAction={goCategories}
         />
