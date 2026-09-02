@@ -10,6 +10,7 @@ import { VariantSheet } from '@/components/shell/VariantSheet';
 import { useAppState } from '@/state/AppStateContext';
 import { useProductSearch } from '@/data/searchApi';
 import { useRecentSearches } from '@/data/recentSearches';
+import { RotatingSearchPlaceholder } from '@/components/shell/RotatingSearchPlaceholder';
 import { toRailProduct } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
 import { productHref } from '@/data/idHash';
@@ -79,16 +80,19 @@ export default function SearchScreen() {
         </Pressable>
         <View style={styles.searchInput}>
           <SearchIcon size={17} color={ds.primaryInk} />
-          <TextInput
-            ref={inputRef}
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={commitSearch}
-            returnKeyType="search"
-            placeholder="Search SKUs, brands, cases"
-            placeholderTextColor={ds.ink3}
-            style={styles.input}
-          />
+          {/* The animated placeholder is drawn over the field rather than passed as `placeholder`,
+              which only takes a plain string - see RotatingSearchPlaceholder. */}
+          <View style={styles.inputWrap}>
+            <TextInput
+              ref={inputRef}
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={commitSearch}
+              returnKeyType="search"
+              style={styles.input}
+            />
+            {!hasQuery && <RotatingSearchPlaceholder color={ds.ink3} paused={hasQuery} overlay />}
+          </View>
           {!!query && (
             <Pressable onPress={() => setQuery('')} style={styles.clearButton} hitSlop={8}>
               <CloseIcon size={10} color={ds.ink2} />
@@ -202,14 +206,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: dsSpacing.sm,
-    height: 44,
+    minHeight: 48,
+    paddingVertical: 4,
     paddingHorizontal: dsSpacing.md,
     borderWidth: 1.5,
     borderColor: ds.primary,
     borderRadius: dsRadii.sheet,
     backgroundColor: ds.surface,
   },
-  input: { flex: 1, fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink, padding: 0 },
+  inputWrap: { flex: 1, position: 'relative', justifyContent: 'center' },
+  input: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink, padding: 0 },
   clearButton: { width: 20, height: 20, borderRadius: 10, backgroundColor: ds.line, alignItems: 'center', justifyContent: 'center' },
   listeningPanel: {
     marginTop: dsSpacing.lg,

@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -90,6 +90,14 @@ const TRUST_BADGES = [
   { name: 'AYUSH Licensed', Icon: AyushLicenseIcon },
 ] as const;
 
+// Gallery carousel geometry. The active photo is deliberately narrower than the screen so a
+// slice of the next one stays visible at the right edge - that peek is what tells the user the
+// gallery is swipeable at all, instead of the old one-photo-at-a-time view where the thumbnail
+// strip was the only way to discover there were more images.
+const GALLERY_SIDE = dsSpacing.lg;
+const GALLERY_GAP = dsSpacing.sm;
+const GALLERY_PEEK = 44;
+
 const PRODUCT_TABS = ['Description', 'Specifications', 'Reviews'] as const;
 type ProductTab = (typeof PRODUCT_TABS)[number];
 
@@ -135,6 +143,20 @@ export default function ProductScreen() {
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxPick, setLightboxPick] = useState(0);
+  const galleryRef = useRef<ScrollView>(null);
+  const { width: windowWidth } = useWindowDimensions();
+  const gallerySlideWidth = Math.max(160, windowWidth - GALLERY_SIDE * 2 - GALLERY_PEEK);
+  const gallerySnap = gallerySlideWidth + GALLERY_GAP;
+  // Single entry point for "show image i": keeps the swipeable carousel, the pager dots, the
+  // thumbnail strip and the lightbox all pointing at the same photo, whichever one the user
+  // actually touched.
+  const pickImage = useCallback(
+    (i: number, scroll = true) => {
+      setLightboxPick(i);
+      if (scroll) galleryRef.current?.scrollTo({ x: i * gallerySnap, animated: true });
+    },
+    [gallerySnap],
+  );
   const [wishlisted, setWishlisted] = useState(false);
   const [descOpen, setDescOpen] = useState(false);
   const [productTab, setProductTab] = useState<ProductTab>('Description');
@@ -351,23 +373,47 @@ export default function ProductScreen() {
         </View>
 
         <View style={styles.photoWrap}>
-          <Pressable onPress={() => setLightboxOpen(true)} style={styles.photo}>
-            {hasRealImages && (
-              <Image source={{ uri: galleryImages[lightboxPick] ?? galleryImages[0] }} style={styles.photoImage} contentFit="contain" />
-            )}
-          </Pressable>
+          {/* Swipe-through gallery: snapping to gallerySnap (slide + gap) rather than paging on
+              the full screen width is what leaves the next photo peeking at the edge while still
+              landing each swipe exactly on one image. */}
+          <ScrollView
+            ref={galleryRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            snapToInterval={gallerySnap}
+            snapToAlignment="start"
+            disableIntervalMomentum
+            contentContainerStyle={styles.galleryContent}
+            onMomentumScrollEnd={(e) => {
+              const i = Math.round(e.nativeEvent.contentOffset.x / gallerySnap);
+              // Sync the dots/thumbs to where the swipe landed, but don't scroll back - the
+              // carousel is already there, and re-scrolling mid-gesture fights the user.
+              pickImage(Math.max(0, Math.min(i, lightboxThumbs.length - 1)), false);
+            }}
+          >
+            {lightboxThumbs.map((i) => (
+              <Pressable
+                key={i}
+                onPress={() => setLightboxOpen(true)}
+                style={[styles.photo, { width: gallerySlideWidth }]}
+              >
+                {hasRealImages && <Image source={{ uri: galleryImages[i] }} style={styles.photoImage} contentFit="cover" />}
+              </Pressable>
+            ))}
+          </ScrollView>
           <Pressable onPress={() => setWishlisted((v) => !v)} style={styles.wishlistButton} hitSlop={4}>
             <HeartIcon size={16} color={ds.primaryInk} fill={wishlisted ? ds.primaryInk : 'none'} />
           </Pressable>
-          <View style={styles.dotsRow}>
-            {lightboxThumbs.map((i) => (
-              <View key={i} style={[styles.dot, { backgroundColor: lightboxPick === i ? ds.primaryInk : 'rgba(12,71,51,.28)' }]} />
-            ))}
-          </View>
+        </View>
+        <View style={styles.dotsRow}>
+          {lightboxThumbs.map((i) => (
+            <View key={i} style={[styles.dot, { backgroundColor: lightboxPick === i ? ds.primaryInk : 'rgba(12,71,51,.28)' }]} />
+          ))}
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow} contentContainerStyle={styles.thumbRowContent}>
           {lightboxThumbs.map((i) => (
-            <Pressable key={i} onPress={() => setLightboxPick(i)} style={[styles.thumb, { borderColor: lightboxPick === i ? ds.primary : 'transparent' }]}>
+            <Pressable key={i} onPress={() => pickImage(i)} style={[styles.thumb, { borderColor: lightboxPick === i ? ds.primary : 'transparent' }]}>
               {hasRealImages && <Image source={{ uri: galleryImages[i] }} style={styles.thumbImage} contentFit="contain" />}
             </Pressable>
           ))}
@@ -468,9 +514,12 @@ export default function ProductScreen() {
                       })}
                     </View>
                   )}
+                  {/* With no variant grid between them, the price sits straight under the divider,
+                      whose own marginVertical already supplies most of the gap - its full lg margin
+                      on top of that left a 32pt hole above the price against 20 below. */}
                   {showBarSavings ? (
                     <>
-                      <View style={styles.priceRow}>
+                      <View style={[styles.priceRow, !isRealMultiVariant && styles.priceAfterDivider]}>
                         <Text style={styles.priceValue}>{money(barUnitPrice)}</Text>
                         <Text style={styles.priceCompare}>{money(referenceUnitPrice)}</Text>
                         <View style={styles.saveChip}>
@@ -481,7 +530,7 @@ export default function ProductScreen() {
                     </>
                   ) : (
                     <>
-                      <Text style={styles.priceValueOnly}>{money(barUnitPrice)}</Text>
+                      <Text style={[styles.priceValueOnly, !isRealMultiVariant && styles.priceAfterDivider]}>{money(barUnitPrice)}</Text>
                       <Text style={styles.priceSubline}>MRP · per unit · inclusive of GST</Text>
                     </>
                   )}
@@ -514,11 +563,12 @@ export default function ProductScreen() {
         {hasBulkTiers(active) && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Bulk pricing</Text>
+            {/* Full-bleed to the card's edges - the negative margins cancel its padding. */}
             <View style={styles.tiersBox}>
               {bulkTiers.map((tier) => (
                 <View key={tier.label} style={[styles.tierRow, { backgroundColor: tier.rowBg }]}>
                   <Text style={[styles.tierLabel, { color: tier.labelColor }]}>{tier.label}</Text>
-                  <Text style={[styles.tierPrice, { color: tier.labelColor }]}>{tier.price}</Text>
+                  <Text style={[styles.tierPrice, styles.tierCellRight, { color: tier.labelColor }]}>{tier.price}</Text>
                 </View>
               ))}
             </View>
@@ -736,7 +786,10 @@ export default function ProductScreen() {
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      <View style={[styles.addBar, { paddingBottom: 12 + insets.bottom }]}>
+      {/* No insets.bottom here: the TabBar rendered below this bar already pads for the home
+          indicator (TabBar.tsx), so adding it again just made the bar bottom-heavy - 12 above
+          the row, 12 + inset below it. Symmetric padding lives in the style now. */}
+      <View style={styles.addBar}>
         <View style={styles.addBarInfo}>
           <View style={styles.addBarTotalRow}>
             <Text style={styles.addBarTotal}>{productLineTotal}</Text>
@@ -772,10 +825,15 @@ export default function ProductScreen() {
         )}
       </View>
 
-      {lightboxOpen && (
+      {/* A Modal, not an absolutely-positioned View: the mini-cart FAB and tab bar are rendered by
+          (tabs)/_layout.tsx as siblings of this screen, so no zIndex here can ever put the lightbox
+          above them - they're in a different stacking context. A Modal renders in its own native
+          window above the whole app, which is also what every other overlay in this app uses
+          (FilterSheet, MiniCartSheet, PolicySheet). */}
+      <Modal visible={lightboxOpen} transparent animationType="fade" onRequestClose={() => setLightboxOpen(false)}>
         <View style={[styles.lightbox, { paddingTop: insets.top + 12 }]}>
-          <Pressable onPress={() => setLightboxOpen(false)} style={[styles.lightboxClose, { top: insets.top + 12 }]}>
-            <CloseIcon size={14} color={ds.ink} strokeWidth={2.2} />
+          <Pressable onPress={() => setLightboxOpen(false)} style={[styles.lightboxClose, { top: insets.top + 12 }]} hitSlop={8}>
+            <CloseIcon size={20} color={ds.ink} strokeWidth={2.4} />
           </Pressable>
           <View style={styles.lightboxPhoto}>
             {hasRealImages && (
@@ -784,13 +842,13 @@ export default function ProductScreen() {
           </View>
           <View style={styles.lightboxThumbs}>
             {lightboxThumbs.map((i) => (
-              <Pressable key={i} onPress={() => setLightboxPick(i)} style={[styles.lightboxThumb, { borderColor: lightboxPick === i ? ds.primary : 'transparent' }]}>
+              <Pressable key={i} onPress={() => pickImage(i)} style={[styles.lightboxThumb, { borderColor: lightboxPick === i ? ds.primary : 'transparent' }]}>
                 {hasRealImages && <Image source={{ uri: galleryImages[i] }} style={styles.thumbImage} contentFit="contain" />}
               </Pressable>
             ))}
           </View>
         </View>
-      )}
+      </Modal>
 
       <VariantSheet visible={!!variantSheetProduct} product={variantSheetProduct} onClose={() => setVariantSheetProduct(null)} />
       <PolicySheet policy={policy} onClose={closePolicy} />
@@ -805,11 +863,15 @@ const styles = StyleSheet.create({
   headerRow: { flexShrink: 0, paddingHorizontal: dsSpacing.lg, paddingBottom: dsSpacing.md, backgroundColor: ds.surface, borderBottomWidth: 1, borderBottomColor: ds.line, flexDirection: 'row', alignItems: 'center', gap: dsSpacing.md },
   backButton: { width: 40, height: 40, borderRadius: dsRadii.pill, backgroundColor: ds.canvas, alignItems: 'center', justifyContent: 'center' },
 
-  photoWrap: { position: 'relative' },
-  photo: { aspectRatio: 4 / 3, backgroundColor: ds.primarySoft },
+  // Breathing room under the back bar - the gallery slides carry their own rounded corners now,
+  // so sitting flush against that bar's bottom border read as a rendering glitch rather than
+  // an edge-to-edge hero.
+  photoWrap: { position: 'relative', paddingTop: dsSpacing.md },
+  galleryContent: { flexDirection: 'row', gap: GALLERY_GAP, paddingHorizontal: GALLERY_SIDE },
+  photo: { aspectRatio: 1, backgroundColor: ds.primarySoft, borderRadius: dsRadii.sheet, overflow: 'hidden' },
   photoImage: { width: '100%', height: '100%' },
   wishlistButton: { position: 'absolute', top: 12, right: dsSpacing.lg, width: 36, height: 36, borderRadius: dsRadii.pill, backgroundColor: ds.surface, boxShadow: '0 1px 2px rgba(12,71,51,.12)', alignItems: 'center', justifyContent: 'center' },
-  dotsRow: { position: 'absolute', left: 0, right: 0, bottom: dsSpacing.md, flexDirection: 'row', justifyContent: 'center', gap: 4 },
+  dotsRow: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: dsSpacing.md },
   dot: { width: 6, height: 6, borderRadius: dsRadii.pill },
   // Was a plain flex row capped at maxWidth:280 with each thumb flex:1 - fine for the 4 fake
   // placeholder slots, but a real product with more than ~4 photos squeezed every thumbnail down
@@ -845,9 +907,16 @@ const styles = StyleSheet.create({
   variantOptionPrice: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.primaryInk, marginTop: 4 },
   variantOptionOutOfStock: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, color: ds.dangerInk, marginTop: 2 },
 
-  priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: dsSpacing.sm, marginTop: dsSpacing.md },
+  // lg above, matching the lg the trustGrid below leaves - the price block used to sit 12 from
+  // what precedes it and 20 from the divider under it, so it read as belonging to the block
+  // above rather than standing on its own.
+  priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: dsSpacing.sm, marginTop: dsSpacing.lg },
   priceValue: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk },
-  priceValueOnly: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk, marginTop: dsSpacing.md },
+  priceValueOnly: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk, marginTop: dsSpacing.lg },
+  // sm, so that plus the divider's own md below it comes to the same lg the trustGrid leaves
+  // under the price. Only for the no-variant layout - with a variant grid in between, the
+  // price is not the divider's neighbour and keeps its full lg.
+  priceAfterDivider: { marginTop: dsSpacing.sm },
   priceCompare: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, textDecorationLine: 'line-through' },
   priceSubline: { ...dsType.meta, marginTop: 4 },
   saveChip: { backgroundColor: ds.accentSoft, borderRadius: dsRadii.chip, paddingHorizontal: dsSpacing.sm, paddingVertical: 4 },
@@ -870,12 +939,26 @@ const styles = StyleSheet.create({
   gatedButton: { height: 48, borderRadius: dsRadii.button, borderWidth: 1.5, borderColor: ds.primary, alignItems: 'center', justifyContent: 'center' },
   gatedButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk },
 
-  card: { marginTop: dsSpacing.md, marginHorizontal: dsSpacing.lg, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, padding: dsSpacing.md, ...dsElevation.e1 },
-  cardTitle: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.ink },
-  tiersBox: { flexDirection: 'column', marginTop: dsSpacing.sm },
-  tierRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: dsSpacing.md, padding: dsSpacing.md, borderTopWidth: 1, borderTopColor: ds.line },
-  tierLabel: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20 },
-  tierPrice: { fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20 },
+  // overflow hidden so the full-bleed tier rows are clipped by the card's rounded corners
+  // instead of squaring them off.
+  card: { marginTop: dsSpacing.md, marginHorizontal: dsSpacing.lg, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, padding: dsSpacing.md, overflow: 'hidden', ...dsElevation.e1 },
+  // dsType.h3, same as every sectionTitle on this screen - "Bulk pricing" was the one heading
+  // still at 13/18, which read as a field label rather than a section of its own.
+  cardTitle: { ...dsType.h3 },
+  // Negative margins cancel the card's own padding so the table meets both edges, and the bottom
+  // one lets the last row sit flush on the card's lower edge.
+  tiersBox: {
+    flexDirection: 'column',
+    marginTop: dsSpacing.md,
+    marginHorizontal: -dsSpacing.md,
+    marginBottom: -dsSpacing.md,
+  },
+  tierCellRight: { textAlign: 'right' },
+  tierRow: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.md, paddingHorizontal: dsSpacing.md, paddingVertical: dsSpacing.md, borderTopWidth: 1, borderTopColor: ds.line },
+  // flex on both cells so the two columns line up row to row, rather than each row's split being
+  // decided by its own text width.
+  tierLabel: { flex: 1, minWidth: 0, fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20 },
+  tierPrice: { flex: 1, minWidth: 0, fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20 },
 
 
   sectionHeaderBlock: { paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.xl },
@@ -884,7 +967,7 @@ const styles = StyleSheet.create({
 
   pincodeSection: { marginTop: dsSpacing.md, paddingHorizontal: dsSpacing.lg },
   pincodeRow: { flexDirection: 'row', gap: dsSpacing.sm },
-  pincodeInput: { flex: 1, justifyContent: 'center', height: 48, borderWidth: 1, borderColor: ds.lineStrong, borderRadius: dsRadii.input, paddingHorizontal: dsSpacing.md },
+  pincodeInput: { flex: 1, justifyContent: 'center', height: 48, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.lineStrong, borderRadius: dsRadii.input, paddingHorizontal: dsSpacing.md },
   pincodeInputText: { ...dsType.body, padding: 0 },
   checkButton: { flexShrink: 0, height: 48, paddingHorizontal: dsSpacing.lg, borderRadius: dsRadii.button, backgroundColor: ds.primaryStrong, alignItems: 'center', justifyContent: 'center' },
   checkButtonText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.surface },
@@ -901,10 +984,15 @@ const styles = StyleSheet.create({
   descToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: dsSpacing.md },
   descToggleText: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.primaryInk },
 
-  specRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: dsSpacing.md, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ds.line },
+  // flex-start, not center: a value long enough to wrap (Pack size, typically) now sits with its
+  // first line level with the key instead of the block being centred against it.
+  specRow: { flexDirection: 'row', alignItems: 'flex-start', gap: dsSpacing.md, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ds.line },
   specRowLast: { borderBottomWidth: 0 },
-  specKey: { ...dsType.meta },
-  specValue: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink, textAlign: 'right' },
+  // The key holds its width, the value takes the rest and wraps within it. Neither cell used to
+  // flex at all, so a long Pack size simply ran past the row's right edge with nothing to
+  // shrink or wrap against.
+  specKey: { ...dsType.meta, flexShrink: 0 },
+  specValue: { flex: 1, minWidth: 0, fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink, textAlign: 'right' },
 
   reviewsSummaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: dsSpacing.md },
   reviewsSummaryLeft: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.sm },
@@ -945,7 +1033,7 @@ const styles = StyleSheet.create({
 
   bottomSpacer: { height: 88 },
 
-  addBar: { flexShrink: 0, backgroundColor: ds.surface, borderTopWidth: 1, borderTopColor: ds.line, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: dsSpacing.md, ...dsElevation.e2 },
+  addBar: { flexShrink: 0, backgroundColor: ds.surface, borderTopWidth: 1, borderTopColor: ds.line, paddingHorizontal: dsSpacing.lg, paddingVertical: dsSpacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: dsSpacing.md, ...dsElevation.e2 },
   addBarInfo: { minWidth: 0 },
   addBarTotalRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
   addBarTotal: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.ink },
@@ -966,8 +1054,8 @@ const styles = StyleSheet.create({
   addBarStepper: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', height: 48, borderRadius: dsRadii.button, backgroundColor: ds.primarySoft },
   addBarStepBtn: { width: 40, height: 48, alignItems: 'center', justifyContent: 'center' },
 
-  lightbox: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(12,71,51,.45)', zIndex: 80, alignItems: 'center', justifyContent: 'center', paddingHorizontal: dsSpacing.lg, paddingBottom: dsSpacing.lg },
-  lightboxClose: { position: 'absolute', right: dsSpacing.lg, width: 32, height: 32, borderRadius: dsRadii.button, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },
+  lightbox: { flex: 1, backgroundColor: 'rgba(0,0,0,.72)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: dsSpacing.lg, paddingBottom: dsSpacing.lg },
+  lightboxClose: { position: 'absolute', right: dsSpacing.lg, width: 44, height: 44, borderRadius: dsRadii.pill, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },
   lightboxPhoto: { width: '100%', aspectRatio: 1, borderRadius: dsRadii.button, backgroundColor: ds.surface, overflow: 'hidden' },
   lightboxPhotoImage: { width: '100%', height: '100%' },
   lightboxThumbs: { flexDirection: 'row', gap: dsSpacing.sm, marginTop: dsSpacing.md },

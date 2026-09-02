@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
-import { ArrowRightIcon, LeafMarkIcon, SmallBackChevronIcon } from '@/icons';
+import { ArrowRightIcon, SmallBackChevronIcon } from '@/icons';
+import { BrandLogo } from '@/components/shell/BrandLogo';
 import { useAppState } from '@/state/AppStateContext';
 import { sendOtp, verifyOtp, fetchCurrentCustomer } from '@/lib/medusaAuth';
 import { toE164 } from '@/lib/phoneFormat';
@@ -37,6 +38,7 @@ export default function AuthOtpScreen() {
   const [otp, setOtp] = useState(['', '', '', '']);
   const [verifying, setVerifying] = useState(false);
   const inputRefs = useRef<(TextInput | null)[]>([]);
+  const scrollRef = useRef<ScrollView>(null);
 
   const authPhoneMasked = (phone || '9198208114').replace(/(\d{3})(\d{3})(\d+)/, '$1-$2-$3');
 
@@ -90,63 +92,82 @@ export default function AuthOtpScreen() {
   };
 
   return (
-    <View style={styles.outer}>
-      <View style={styles.top}>
-        <Pressable onPress={goAuthPhone} style={[styles.backButton, { top: insets.top + 16 }]} hitSlop={4}>
-          <SmallBackChevronIcon size={9} color={ds.ink} />
-        </Pressable>
-        <LeafMarkIcon size={48} />
-        <Text style={styles.wordmark}>AYURVEDAONE</Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={dsType.h1}>Enter verification code</Text>
-        <Text style={styles.subtitle}>
-          Enter the 4-digit code sent to{'\n'}
-          <Text style={styles.phoneText}>+91 {authPhoneMasked}</Text>
-        </Text>
-
-        <View style={styles.otpRow}>
-          {otp.map((d, i) => (
-            <TextInput
-              key={i}
-              ref={(r) => {
-                inputRefs.current[i] = r;
-              }}
-              value={d}
-              onChangeText={(v) => onDigitChange(i, v)}
-              maxLength={1}
-              keyboardType="number-pad"
-              style={[styles.otpBox, { borderColor: d ? ds.primary : ds.lineStrong }]}
-            />
-          ))}
+    // Same fix as auth/phone.tsx: the card is pinned to the bottom of the screen, so the number
+    // pad landed straight on top of the code boxes and the Verify button. `padding` on both
+    // platforms - Android included, because SDK 54's edge-to-edge window is not resized by the
+    // keyboard - and the ScrollView keeps the card reachable when the lift alone isn't enough.
+    <KeyboardAvoidingView style={styles.outer} behavior="padding">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <View style={styles.top}>
+          <Pressable onPress={goAuthPhone} style={[styles.backButton, { top: insets.top + 16 }]} hitSlop={4}>
+            <SmallBackChevronIcon size={9} color={ds.ink} />
+          </Pressable>
+          <BrandLogo />
         </View>
 
-        <Pressable onPress={submitOtp} disabled={verifying} style={[styles.ctaButton, verifying && styles.ctaButtonDisabled]}>
-          {verifying ? (
-            <ActivityIndicator color={ds.surface} />
-          ) : (
-            <>
-              <Text style={styles.ctaButtonText}>Verify</Text>
-              <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
-            </>
-          )}
-        </Pressable>
+        <View style={styles.card}>
+          <Text style={dsType.h1}>Enter verification code</Text>
+          <Text style={styles.subtitle}>
+            Enter the 4-digit code sent to{'\n'}
+            <Text style={styles.phoneText}>+91 {authPhoneMasked}</Text>
+          </Text>
 
-        <Text style={styles.resendText}>
-          Didn&apos;t receive the code? <Text onPress={resendOtp} style={styles.resendLink}>Resend OTP</Text>
-        </Text>
-      </View>
+          <View style={styles.otpRow}>
+            {otp.map((d, i) => (
+              <TextInput
+                key={i}
+                ref={(r) => {
+                  inputRefs.current[i] = r;
+                }}
+                value={d}
+                onChangeText={(v) => onDigitChange(i, v)}
+                maxLength={1}
+                keyboardType="number-pad"
+                style={[styles.otpBox, { borderColor: d ? ds.primary : ds.lineStrong }]}
+                // Delayed past the keyboard's own animation, so the scrollable height is final by
+                // the time we scroll. Auto-advance re-fires this per box, which is harmless - the
+                // view is already at the end.
+                onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150)}
+              />
+            ))}
+          </View>
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>© 2026 AyurvedaOne. All Rights Reserved.</Text>
-      </View>
-    </View>
+          <Pressable onPress={submitOtp} disabled={verifying} style={[styles.ctaButton, verifying && styles.ctaButtonDisabled]}>
+            {verifying ? (
+              <ActivityIndicator color={ds.surface} />
+            ) : (
+              <>
+                <Text style={styles.ctaButtonText}>Verify</Text>
+                <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
+              </>
+            )}
+          </Pressable>
+
+          <Text style={styles.resendText}>
+            Didn&apos;t receive the code? <Text onPress={resendOtp} style={styles.resendLink}>Resend OTP</Text>
+          </Text>
+        </View>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>© 2026 AyurvedaOne. All Rights Reserved.</Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  outer: { flex: 1, backgroundColor: ds.inverse },
+  outer: { flex: 1, backgroundColor: ds.canvas },
+  // flexGrow, not flex: keyboard down, the content still fills the screen so the hero's flex:1
+  // holds the card at the bottom; keyboard up, it may exceed the space left and scroll.
+  scrollContent: { flexGrow: 1 },
   top: {
     flex: 1,
     position: 'relative',
@@ -165,9 +186,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  wordmark: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: 1.8, color: ds.ink, marginTop: dsSpacing.md },
 
-  card: { flexShrink: 0, backgroundColor: ds.surface, borderTopLeftRadius: dsRadii.sheet, borderTopRightRadius: dsRadii.sheet, padding: 24, paddingHorizontal: dsSpacing.lg, alignItems: 'center' },
+  card: { flexShrink: 0, backgroundColor: ds.surface, padding: 24, paddingHorizontal: dsSpacing.lg, alignItems: 'center' },
   subtitle: { ...dsType.body, color: ds.ink2, marginTop: dsSpacing.sm, textAlign: 'center' },
   phoneText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 21, color: ds.primaryInk },
 
@@ -201,6 +221,6 @@ const styles = StyleSheet.create({
   resendText: { fontFamily: dsFontFamily[400], fontSize: 13, lineHeight: 19, color: ds.ink2, marginTop: dsSpacing.md },
   resendLink: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 19, color: ds.primaryInk },
 
-  footer: { flexShrink: 0, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md, paddingBottom: 24, alignItems: 'center' },
+  footer: { flexShrink: 0, backgroundColor: ds.inverse, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md, paddingBottom: 24, alignItems: 'center' },
   footerText: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,.72)' },
 });

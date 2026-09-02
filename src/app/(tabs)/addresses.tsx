@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
@@ -286,65 +286,77 @@ export default function AddressesScreen() {
       </ScrollView>
 
       <Modal visible={sheetOpen} transparent animationType="slide" onRequestClose={closeSheet}>
-        <Pressable style={styles.overlay} onPress={closeSheet} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom }]}>
-          <View style={styles.grabberRow}>
-            <View style={styles.grabber} />
-          </View>
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle} numberOfLines={1}>{sheetTitle}</Text>
-            <Pressable onPress={closeSheet} style={styles.roundButton} hitSlop={4}>
-              <CloseIcon size={14} color={ds.ink} strokeWidth={2.2} />
-            </Pressable>
-          </View>
-          <ScrollView style={styles.sheetBody} contentContainerStyle={styles.sheetBodyContent}>
-            <Field label="Receiver Name" value={draft.name} onChangeText={(v) => setField('name', v)} placeholder="Receiver name" />
-            <View style={{ marginTop: dsSpacing.md }}>
-              <Text style={styles.fieldLabel}>Receiver Phone Number</Text>
-              <View style={styles.phoneBox}>
-                <Text style={styles.phonePrefix}>+91</Text>
-                <View style={styles.phoneDivider} />
-                <TextInput
-                  value={draft.phone}
-                  onChangeText={onDraftPhone}
-                  placeholder="10-digit mobile number"
-                  placeholderTextColor={ds.ink3}
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  style={styles.input}
-                />
+        {/* The sheet used to be position:absolute/bottom:0, i.e. pinned to the bottom of the window
+            - which the keyboard then covered, taking the last fields and the Save button with it.
+            Nothing here avoided the keyboard: a Modal gets no automatic avoidance on iOS, and SDK
+            54's edge-to-edge Android window is not resized either.
+
+            Now the modal is a flex column (overlay on top, sheet below) inside a
+            KeyboardAvoidingView, so the keyboard's height is padding the column and the sheet rides
+            above it. `pointerEvents="box-none"` lets taps through the wrapper to the overlay. */}
+        <KeyboardAvoidingView style={styles.sheetWrap} behavior="padding" pointerEvents="box-none">
+          <Pressable style={styles.overlay} onPress={closeSheet} />
+          <View style={[styles.sheet, { paddingBottom: insets.bottom }]}>
+            <View style={styles.grabberRow}>
+              <View style={styles.grabber} />
+            </View>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle} numberOfLines={1}>{sheetTitle}</Text>
+              <Pressable onPress={closeSheet} style={styles.roundButton} hitSlop={4}>
+                <CloseIcon size={14} color={ds.ink} strokeWidth={2.2} />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.sheetBody} contentContainerStyle={styles.sheetBodyContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+              <Field label="Receiver Name" value={draft.name} onChangeText={(v) => setField('name', v)} placeholder="Receiver name" />
+              <View>
+                <Text style={styles.fieldLabel}>Receiver Phone Number</Text>
+                <View style={styles.phoneBox}>
+                  <Text style={styles.phonePrefix}>+91</Text>
+                  <View style={styles.phoneDivider} />
+                  <TextInput
+                    value={draft.phone}
+                    onChangeText={onDraftPhone}
+                    placeholder="10-digit mobile number"
+                    placeholderTextColor={ds.ink3}
+                    keyboardType="number-pad"
+                    maxLength={10}
+                    style={styles.input}
+                  />
+                </View>
               </View>
-            </View>
-            <Field label="Clinic/Pharmacy Name" value={draft.biz} onChangeText={(v) => setField('biz', v)} placeholder="Enter clinic/pharmacy name" style={{ marginTop: dsSpacing.md }} />
+              <Field label="Clinic/Pharmacy Name" value={draft.biz} onChangeText={(v) => setField('biz', v)} placeholder="Enter clinic/pharmacy name" />
 
-            <Text style={styles.fieldLabel}>Clinic/Pharmacy Address</Text>
-            <View style={styles.textareaBox}>
-              <TextInput
-                value={draft.line}
-                onChangeText={(v) => setField('line', v)}
-                placeholder="Enter building name & number, street & area properly"
-                placeholderTextColor={ds.ink3}
-                multiline
-                style={styles.textarea}
-              />
-            </View>
+              <View>
+                <Text style={styles.fieldLabel}>Clinic/Pharmacy Address</Text>
+                <View style={styles.textareaBox}>
+                  <TextInput
+                    value={draft.line}
+                    onChangeText={(v) => setField('line', v)}
+                    placeholder="Enter building name & number, street & area properly"
+                    placeholderTextColor={ds.ink3}
+                    multiline
+                    style={styles.textarea}
+                  />
+                </View>
+              </View>
 
-            <View style={styles.fieldRow}>
-              <Field label="Landmark" value={draft.landmark} onChangeText={(v) => setField('landmark', v)} placeholder="Enter landmark" style={styles.fieldHalf} />
-              <Field label="Pincode" value={draft.pincode} onChangeText={onDraftPincode} placeholder="6-digit pincode" style={styles.fieldHalf} keyboardType="number-pad" />
+              <View style={styles.fieldRow}>
+                <Field label="Landmark" value={draft.landmark} onChangeText={(v) => setField('landmark', v)} placeholder="Enter landmark" style={styles.fieldHalf} />
+                <Field label="Pincode" value={draft.pincode} onChangeText={onDraftPincode} placeholder="6-digit pincode" style={styles.fieldHalf} keyboardType="number-pad" />
+              </View>
+              <View style={styles.fieldRow}>
+                <Field label="City" value={draft.city} onChangeText={(v) => setField('city', v)} placeholder="Enter city" style={styles.fieldHalf} muted />
+                <Field label="State" value={draft.state} onChangeText={(v) => setField('state', v)} placeholder="Enter state" style={styles.fieldHalf} muted />
+              </View>
+            </ScrollView>
+            <View style={styles.sheetFooter}>
+              {!!formError && <Text style={styles.formErrorText}>{formError}</Text>}
+              <Pressable onPress={saveAddress} disabled={saving} style={[styles.sheetCta, saving && styles.sheetCtaDisabled]}>
+                {saving ? <ActivityIndicator color={ds.surface} /> : <Text style={styles.sheetCtaText}>{sheetCta}</Text>}
+              </Pressable>
             </View>
-            <View style={styles.fieldRow}>
-              <Field label="City" value={draft.city} onChangeText={(v) => setField('city', v)} placeholder="Enter city" style={styles.fieldHalf} muted />
-              <Field label="State" value={draft.state} onChangeText={(v) => setField('state', v)} placeholder="Enter state" style={styles.fieldHalf} muted />
-            </View>
-          </ScrollView>
-          <View style={styles.sheetFooter}>
-            {!!formError && <Text style={styles.formErrorText}>{formError}</Text>}
-            <Pressable onPress={saveAddress} disabled={saving} style={[styles.sheetCta, saving && styles.sheetCtaDisabled]}>
-              {saving ? <ActivityIndicator color={ds.surface} /> : <Text style={styles.sheetCtaText}>{sheetCta}</Text>}
-            </Pressable>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -452,13 +464,18 @@ const styles = StyleSheet.create({
   radioOnDot: { width: 6, height: 6, borderRadius: dsRadii.pill, backgroundColor: ds.surface },
   radioOff: { width: 16, height: 16, borderRadius: dsRadii.pill, borderWidth: 1.8, borderColor: ds.primary },
 
-  overlay: { flex: 1, backgroundColor: 'rgba(12,71,51,.45)' },
+  // Column filling the modal: the overlay takes all the slack above, which pushes the sheet to the
+  // bottom without absolute positioning - so when the KeyboardAvoidingView pads the column, the
+  // sheet actually moves up instead of staying pinned to the window's bottom edge.
+  sheetWrap: { flex: 1 },
+  // minHeight so a tall form can never squeeze the backdrop to nothing - there must always be a
+  // strip of it left to tap for dismissing the sheet.
+  overlay: { flex: 1, minHeight: 56, backgroundColor: 'rgba(12,71,51,.45)' },
   sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    maxHeight: '85%',
+    // No maxHeight percentage any more: '85%' resolved against the full window, not the space left
+    // above the keyboard, so the sheet could be taller than what you could actually see and its
+    // overflow:hidden simply clipped the rest. flexShrink lets it give instead.
+    flexShrink: 1,
     backgroundColor: ds.surface,
     borderTopLeftRadius: dsRadii.sheet,
     borderTopRightRadius: dsRadii.sheet,
@@ -478,8 +495,13 @@ const styles = StyleSheet.create({
     borderBottomColor: ds.line,
   },
   sheetTitle: { ...dsType.h2, flex: 1, minWidth: 0 },
-  sheetBody: { flexGrow: 0 },
-  sheetBodyContent: { padding: dsSpacing.lg },
+  // flexShrink, not flexGrow:0 - the scroll area is what should give when the sheet is squeezed,
+  // so the header and the Save-button footer stay visible and the fields scroll.
+  sheetBody: { flexGrow: 0, flexShrink: 1 },
+  // One gap on the column instead of a marginTop on each field. The old per-field margins had
+  // drifted out of step - the address textarea carried none at all, so it sat flush against the
+  // field above it - and every new field had to remember to add its own.
+  sheetBodyContent: { padding: dsSpacing.lg, gap: dsSpacing.md },
   fieldLabel: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.ink2 },
   inputBox: {
     marginTop: dsSpacing.sm,
@@ -516,7 +538,7 @@ const styles = StyleSheet.create({
     padding: dsSpacing.md,
   },
   textarea: { ...dsType.body, height: 56, textAlignVertical: 'top', padding: 0 },
-  fieldRow: { flexDirection: 'row', gap: dsSpacing.md, marginTop: dsSpacing.md },
+  fieldRow: { flexDirection: 'row', gap: dsSpacing.md },
   fieldHalf: { flex: 1, minWidth: 0 },
   sheetFooter: { borderTopWidth: 1, borderTopColor: ds.line, padding: dsSpacing.md, paddingHorizontal: dsSpacing.lg },
   formErrorText: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.dangerInk, marginBottom: dsSpacing.sm, textAlign: 'center' },

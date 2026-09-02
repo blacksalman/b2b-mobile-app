@@ -6,6 +6,7 @@ import { TabBar } from '@/components/shell/TabBar';
 import { Toast } from '@/components/shell/Toast';
 import { MiniCartFab } from '@/components/shell/MiniCartFab';
 import { useAppState } from '@/state/AppStateContext';
+import { dsSpacing } from '@/theme';
 
 // All source screens are siblings under this one real `<Tabs/>` navigator (see plan's "Tab Bar Must
 // Never Hide" note) so the custom TabBar below — rendered via the `tabBar` prop, not a `<Slot/>`
@@ -31,9 +32,18 @@ function isMiniCartScreen(pathname: string): boolean {
 
 // The Product Detail screen (not its Reviews sub-route) renders its own screen-local sticky
 // "Add to Cart" footer (`addBar` in `product/[id].tsx`) above the always-visible TabBar — a fixed
-// height of paddingTop(12) + content(48) + paddingBottom(12) + border(1) = 73, plus that bar's own
-// `insets.bottom` padding. The floating mini-cart pill below needs to clear that bar too, not just
-// the TabBar, or it renders underneath it.
+// height of paddingTop(12) + content(48) + paddingBottom(12) + border(1) = 73. The floating
+// mini-cart pill below needs to clear that bar too, not just the TabBar, or it renders underneath
+// it. No `insets.bottom` in that sum: the bar no longer pads for the home indicator itself, since
+// the TabBar beneath it already does.
+// The 3-screen Auth flow (Phone -> OTP -> Register) hides the tab bar. This is a deliberate
+// departure from source, which kept it visible everywhere (see the note in auth/phone.tsx): these
+// screens are a full-screen, self-contained flow with their own close/back affordance, and the tab
+// bar both competed with that and ate the space the keyboard needs.
+function isAuthScreen(pathname: string): boolean {
+  return pathname.startsWith('/auth/');
+}
+
 const PRODUCT_ADD_BAR_HEIGHT = 73;
 function isProductDetailScreen(pathname: string): boolean {
   return pathname.startsWith('/product/') && !pathname.endsWith('/reviews');
@@ -50,8 +60,14 @@ export default function TabsLayout() {
   const onTabBarLayout = (e: LayoutChangeEvent) => setTabBarHeight(e.nativeEvent.layout.height);
   const onFabLayout = (e: LayoutChangeEvent) => setFabHeight(e.nativeEvent.layout.height);
 
+  const hideTabBar = isAuthScreen(pathname);
   const showFab = cartTotals.cartHasItems && isMiniCartScreen(pathname);
-  const fabBottomOffset = tabBarHeight + (isProductDetailScreen(pathname) ? PRODUCT_ADD_BAR_HEIGHT + insets.bottom : 0);
+  const fabBottomOffset = tabBarHeight + (isProductDetailScreen(pathname) ? PRODUCT_ADD_BAR_HEIGHT : 0);
+  // With no tab bar to clear, a toast sits on the safe-area inset instead of the (now stale)
+  // last-measured bar height - otherwise it floats in mid-air above nothing on the auth screens.
+  const toastBottomOffset = hideTabBar
+    ? insets.bottom + dsSpacing.md
+    : tabBarHeight + (showFab ? fabHeight + 20 : 12);
   const goCart = () => router.push('/cart');
 
   return (
@@ -59,11 +75,13 @@ export default function TabsLayout() {
       screenOptions={{ headerShown: false, animation: 'none' }}
       tabBar={() => (
         <View style={styles.tabBarWrap}>
-          <Toast bottomOffset={tabBarHeight + (showFab ? fabHeight + 20 : 12)} />
+          <Toast bottomOffset={toastBottomOffset} />
           {showFab && <MiniCartFab bottomOffset={fabBottomOffset} onLayout={onFabLayout} onPress={goCart} />}
-          <View onLayout={onTabBarLayout}>
-            <TabBar />
-          </View>
+          {!hideTabBar && (
+            <View onLayout={onTabBarLayout}>
+              <TabBar />
+            </View>
+          )}
         </View>
       )}
     >

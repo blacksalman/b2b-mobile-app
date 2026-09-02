@@ -413,7 +413,10 @@ export default function CheckoutScreen() {
         </View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: dsSpacing.md + insets.bottom }]}>
+      {/* No insets.bottom: the TabBar below this bar already pads for the home indicator
+          (TabBar.tsx), so adding it here only made the bar bottom-heavy. Symmetric padding
+          lives in styles.footer, same as the cart and PDP bars. */}
+      <View style={styles.footer}>
         <View style={styles.footerInfo}>
           <Text style={styles.footerLabel}>To pay</Text>
           <Text style={styles.footerTotal} numberOfLines={1}>{money(cart.total)}</Text>
@@ -428,7 +431,7 @@ export default function CheckoutScreen() {
           ) : (
             <>
               <Text style={styles.payButtonText}>Place order</Text>
-              <ArrowRightIcon size={13} color={ds.surface} strokeWidth={2.2} />
+              <ArrowRightIcon size={14} color={ds.surface} strokeWidth={2.2} />
             </>
           )}
         </Pressable>
@@ -557,7 +560,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: ds.line,
     paddingHorizontal: dsSpacing.lg,
-    paddingTop: dsSpacing.md,
+    paddingVertical: dsSpacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -567,9 +570,17 @@ const styles = StyleSheet.create({
   footerInfo: { minWidth: 0 },
   footerLabel: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2 },
   footerTotal: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.primaryInk },
+  // 48 high like every other primary CTA in the app (the cart's Checkout button this one follows
+  // in the flow, the PDP's Add to Cart, the reviews submit button) - 40 left the final, most
+  // consequential button in the funnel visibly smaller than the one that led to it.
   payButton: {
     flexShrink: 0,
-    height: 40,
+    // Floors the button's width so it keeps its presence as the primary action - without it the
+    // button is only as wide as "Place order" plus its arrow, and it shrinks further still while
+    // the spinner is showing. footerInfo carries minWidth:0, so a long total shrinks rather than
+    // squeezing this.
+    minWidth: 170,
+    height: 48,
     borderRadius: dsRadii.button,
     backgroundColor: ds.primaryStrong,
     flexDirection: 'row',

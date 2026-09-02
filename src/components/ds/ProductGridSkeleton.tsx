@@ -19,7 +19,7 @@ export function ProductGridSkeleton({ count = 6, style }: ProductGridSkeletonPro
   return (
     <View style={[styles.grid, style]}>
       {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i} width="48%" height={230} radius={dsRadii.sheet} />
+        <Skeleton key={i} width="48%" height={248} radius={dsRadii.sheet} />
       ))}
     </View>
   );

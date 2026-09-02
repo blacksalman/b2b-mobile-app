@@ -168,8 +168,8 @@ export default function HomeScreen() {
 
         {/* Prescription at a glance */}
         <DsSectionHeader
-          title="Prescription at a glance"
-          subtitle="Curated product groups for common prescriptions"
+          title="Shop by Concern"
+          subtitle="Browse curated Ayurvedic product ranges across key health concerns."
           actionLabel="View all"
           onAction={goCategories}
         />
@@ -226,7 +226,7 @@ export default function HomeScreen() {
                   <View key={p.id} style={styles.fastMovingRow}>
                     <Pressable onPress={() => openProduct(p)} style={styles.fastMovingPhoto}>
                       {p.thumbnail ? (
-                        <Image source={{ uri: p.thumbnail }} style={styles.fastMovingImage} contentFit="contain" />
+                        <Image source={{ uri: p.thumbnail }} style={styles.fastMovingImage} contentFit="cover" />
                       ) : (
                         <Text style={styles.fastMovingPhotoLabel}>photo</Text>
                       )}
@@ -626,7 +626,7 @@ const RailSkeleton = React.memo(function RailSkeleton({ count = 3 }: { count?: n
   return (
     <View style={styles.rail}>
       {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i} width={166} height={230} radius={dsRadii.sheet} />
+        <Skeleton key={i} width={166} height={248} radius={dsRadii.sheet} />
       ))}
     </View>
   );
@@ -772,7 +772,7 @@ const styles = StyleSheet.create({
   uspGrid: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
   uspTile: { flex: 1, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, padding: dsSpacing.md, alignItems: 'center', ...dsElevation.e1 },
   uspIconTile: { width: 34, height: 34, borderRadius: dsRadii.button, alignItems: 'center', justifyContent: 'center' },
-  uspLabel: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink, marginTop: dsSpacing.sm },
+  uspLabel: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink, marginTop: dsSpacing.sm, textAlign: 'center' },
 
   rail: { flexDirection: 'row', gap: dsSpacing.md, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
 
