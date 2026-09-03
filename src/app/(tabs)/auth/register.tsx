@@ -7,6 +7,8 @@ import { ArrowRightIcon, CheckThinIcon, SmallBackChevronIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import { completeRegistration } from '@/lib/medusaAuth';
 import { toE164 } from '@/lib/phoneFormat';
+import { PolicySheet } from '@/components/shell/PolicySheet';
+import { usePolicies } from '@/data/account-content';
 
 // Built against the new AyurvedaOne design system (screen_AuthRegister.html, `isAuthRegister` block —
 // fully in range). Final step of the Auth flow: on completion this is the ONE place in the app that
@@ -37,6 +39,9 @@ export default function AuthRegisterScreen() {
   const insets = useSafeAreaInsets();
   const { flash, login } = useAppState();
   const { phone } = useLocalSearchParams<{ phone?: string }>();
+  const { policies } = usePolicies();
+  const [policyKey, setPolicyKey] = useState<string | null>(null);
+  const policy = policyKey ? policies.find((p) => p.key === policyKey) ?? null : null;
 
   const [regName, setRegName] = useState('');
   const [regBusiness, setRegBusiness] = useState('');
@@ -45,8 +50,9 @@ export default function AuthRegisterScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const goAuthPhone = () => router.push('/auth/phone');
-  const openPolicyTerms = () => flash('Terms of Service');
-  const openPolicyPrivacy = () => flash('Privacy Policy');
+  const openPolicyTerms = () => setPolicyKey('terms');
+  const openPolicyPrivacy = () => setPolicyKey('privacy');
+  const closePolicy = () => setPolicyKey(null);
   const submitRegistration = async () => {
     if (submitting) return;
     if (!phone) {
@@ -136,11 +142,16 @@ export default function AuthRegisterScreen() {
           </Text>
         </View>
       </ScrollView>
+      <PolicySheet policy={policy} onClose={closePolicy} />
     </View>
   );
 }
 
-const REG_TYPES = ['Doctor', 'Retailer/Distributor'] as const;
+// Exported so Edit Profile (edit-profile.tsx's own business-type picker) reads the same option
+// set customer.metadata.business_type is actually written from here - it previously had its own
+// unrelated ['Pharmacy', 'Clinic'] list, so a value set at registration ("Doctor") matched neither
+// tile there, leaving both radios unselected and risking a silent overwrite on save.
+export const REG_TYPES = ['Doctor', 'Retailer/Distributor'] as const;
 
 const Field = React.memo(function Field({
   label,
@@ -211,6 +222,7 @@ const styles = StyleSheet.create({
   typeRow: { flexDirection: 'row', gap: dsSpacing.sm, marginTop: dsSpacing.sm },
   typeTile: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: dsSpacing.sm,
@@ -229,7 +241,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   radioDotOn: { backgroundColor: ds.primaryStrong },
-  typeTileText: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.ink },
+  typeTileText: { flexShrink: 1, fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.ink },
 
   // Literal 10px radius from source markup, not dsRadii.button (12) — the same §5-vs-§8.1
   // discrepancy already flagged in the Checkout round's report.

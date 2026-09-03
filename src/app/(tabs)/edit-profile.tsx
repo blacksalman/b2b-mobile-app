@@ -7,6 +7,7 @@ import { CheckThinIcon, SmallBackChevronIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import { updateCustomer } from '@/lib/medusaAuth';
 import { toE164 } from '@/lib/phoneFormat';
+import { REG_TYPES as BUSINESS_TYPES } from './auth/register';
 
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, the
 // `isEditProfile` block, screen_EditProfile.html) - same layout as the original mock build, now
@@ -132,8 +133,6 @@ export default function EditProfileScreen() {
   );
 }
 
-const BUSINESS_TYPES = ['Pharmacy', 'Clinic'] as const;
-
 const Field = React.memo(function Field({
   label,
   value,
@@ -246,6 +245,7 @@ const styles = StyleSheet.create({
   bizRow: { marginTop: dsSpacing.sm, flexDirection: 'row', gap: dsSpacing.sm },
   bizTile: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: dsSpacing.sm,
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   radioDotOn: { backgroundColor: ds.primaryStrong },
-  bizTileText: { fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.ink },
+  bizTileText: { flexShrink: 1, fontFamily: dsFontFamily[600], fontSize: 13, lineHeight: 18, color: ds.ink },
 
   saveButton: {
     marginTop: dsSpacing.lg,
