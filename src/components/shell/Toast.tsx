@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Animated, StyleSheet, Text } from 'react-native';
 import { colors, fontFamily } from '@/theme';
 import { useAppState } from '@/state/AppStateContext';
 
@@ -8,12 +7,10 @@ interface ToastProps {
   bottomOffset: number;
 }
 
-// Ported verbatim from the source's toast (line 1337): dark forest-green pill floating above the tab
-// bar, message + "View order" link in gold, slide-up-and-fade-in on appear. Auto-dismiss timing lives
-// in AppStateContext's flash() (2.6s), matching the source's setTimeout.
+// Dark forest-green pill floating above the tab bar, slide-up-and-fade-in on appear. Auto-dismiss
+// timing lives in AppStateContext's flash() (2.6s).
 export function Toast({ bottomOffset }: ToastProps) {
   const { toast } = useAppState();
-  const router = useRouter();
   const translateY = useRef(new Animated.Value(14)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -38,9 +35,6 @@ export function Toast({ bottomOffset }: ToastProps) {
       ]}
     >
       <Text style={styles.message}>{toast}</Text>
-      <Pressable onPress={() => router.push('/cart')} hitSlop={8}>
-        <Text style={styles.link}>View order</Text>
-      </Pressable>
     </Animated.View>
   );
 }
@@ -56,17 +50,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
   message: {
     fontFamily: fontFamily[500],
     fontSize: 12,
     color: colors.white,
     flexShrink: 1,
-  },
-  link: {
-    fontFamily: fontFamily[600],
-    fontSize: 12,
-    color: colors.gold,
   },
 });
