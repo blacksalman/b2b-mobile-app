@@ -164,6 +164,11 @@ function buildCartData(cart: MedusaCart | null, productsById: Map<string, Medusa
 export interface UseRealCartResult extends RealCartData {
   reload: () => Promise<void>;
   updateQuantity: (lineId: string, quantity: number) => Promise<void>;
+  // Line ids with a quantity/remove mutation currently in flight - lets Cart show a small
+  // per-row spinner (CartLineCard's `busy` prop) instead of the old approach of setting the
+  // whole screen's `loading` true, which unmounted the entire line list (including the row just
+  // tapped) behind a full-page spinner for the mutation's duration. See updateQuantity below.
+  mutatingLineIds: Set<string>;
 }
 
 // A `reload()`/`updateQuantity()` that resolves in a handful of milliseconds (a warm network, an
@@ -182,6 +187,7 @@ export function useRealCart(): UseRealCartResult {
   const [productsById, setProductsById] = useState<Map<string, MedusaProduct>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [mutatingLineIds, setMutatingLineIds] = useState<Set<string>>(new Set());
   // Ignores a response that resolves after a NEWER reload() has already started - without this,
   // two overlapping fetches (e.g. a fast focus-triggered reload racing a slower one still in
   // flight from just before) could let the slower, now-stale response overwrite the fresher one.
@@ -225,15 +231,30 @@ export function useRealCart(): UseRealCartResult {
   const updateQuantity = useCallback(
     async (lineId: string, quantity: number) => {
       if (!cart) return;
-      // Now shows the same loading state reload() does - previously this never touched `loading`
-      // at all, so a slow removal (queued behind other cart mutations - runCartMutation,
-      // cartSync.ts - can take a few real seconds) showed no feedback whatsoever.
       const myRequestId = ++requestId.current;
-      const startedAt = Date.now();
       // Captured before the mutation - once a line is removed it's gone from cart.items, so this
       // is the last point productId is available to key cartSync.ts's cache off of.
       const productId = cart.items.find((i) => i.id === lineId)?.product_id;
-      setLoading(true);
+
+      // Optimistic UI: patch the tapped line's quantity locally right away instead of setting the
+      // screen-wide `loading` true - the previous version set `loading` for the whole real-cart
+      // round trip (which is also queued behind every other add/inc/dec in flight anywhere in the
+      // app, see runCartMutation below, and can take a few real seconds), and cart.tsx unmounts
+      // its entire line list while `loading` is true. That made the exact row just tapped vanish
+      // behind a full-page spinner instead of its number simply going up, while the header/tab
+      // bar's own count (AppStateContext's separate local counter, bumped synchronously alongside
+      // this call) updated instantly - the mismatch this was built to fix. `previousCart` lets a
+      // failed mutation below revert cleanly instead of leaving a phantom optimistic quantity.
+      const previousCart = cart;
+      setCart({
+        ...cart,
+        items:
+          quantity <= 0
+            ? cart.items.filter((i) => i.id !== lineId)
+            : cart.items.map((i) => (i.id === lineId ? { ...i, quantity } : i)),
+      });
+      setMutatingLineIds((prev) => new Set(prev).add(lineId));
+
       try {
         // Routed through the same shared queue as every add/inc/dec elsewhere in the app
         // (cartSync.ts's runCartMutation) - confirmed live that concurrent writes to the same
@@ -253,17 +274,22 @@ export function useRealCart(): UseRealCartResult {
         setCart(updated);
         setError(false);
       } catch {
-        if (myRequestId === requestId.current) setError(true);
+        if (myRequestId === requestId.current) {
+          setCart(previousCart);
+          setError(true);
+        }
       } finally {
         if (myRequestId === requestId.current) {
-          const elapsed = Date.now() - startedAt;
-          if (elapsed < MIN_LOADING_MS) await sleep(MIN_LOADING_MS - elapsed);
-          if (myRequestId === requestId.current) setLoading(false);
+          setMutatingLineIds((prev) => {
+            const next = new Set(prev);
+            next.delete(lineId);
+            return next;
+          });
         }
       }
     },
     [cart]
   );
 
-  return { ...buildCartData(cart, productsById, loading, error), reload, updateQuantity };
+  return { ...buildCartData(cart, productsById, loading, error), reload, updateQuantity, mutatingLineIds };
 }

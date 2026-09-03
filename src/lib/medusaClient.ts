@@ -285,7 +285,9 @@ export interface MedusaProduct {
   thumbnail: string | null;
   description?: string | null;
   images?: { id: string; url: string }[];
-  collection?: { id: string; title: string } | null;
+  // metadata.manufacturer (stats/usps/about) backs the Product page's "About the manufacturer"
+  // section - see manufacturer-info.tsx (backend admin widget) and product/[id].tsx's own parsing.
+  collection?: { id: string; title: string; metadata?: Record<string, unknown> | null } | null;
   categories?: { id: string; name: string }[];
   type_id?: string | null; // resolves this product's real GST rate - see taxRates.ts
   variants?: MedusaVariant[];
@@ -301,6 +303,7 @@ const PRODUCT_FIELDS = [
   'images.url',
   'collection.id',
   'collection.title',
+  'collection.metadata',
   'categories.id',
   'categories.name',
   'type_id',

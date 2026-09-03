@@ -46,6 +46,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// True when the cart's currently-stored shipping address already matches the address book entry
+// Checkout would otherwise re-PATCH onto it - lets loadCheckout skip setCartAddress/
+// fetchShippingOptions/addShippingMethod entirely on a repeat visit where nothing changed, rather
+// than re-running that whole chain on every single focus regardless.
+function addressesMatch(cartAddr: MedusaCart['shipping_address'], selected: MedusaAddress): boolean {
+  if (!cartAddr) return false;
+  return (
+    (cartAddr.first_name ?? '') === (selected.first_name ?? '') &&
+    (cartAddr.last_name ?? '') === (selected.last_name ?? '') &&
+    (cartAddr.company ?? '') === (selected.company ?? '') &&
+    cartAddr.address_1 === selected.address_1 &&
+    (cartAddr.address_2 ?? '') === (selected.address_2 ?? '') &&
+    cartAddr.city === selected.city &&
+    (cartAddr.province ?? '') === (selected.province ?? '') &&
+    cartAddr.postal_code === selected.postal_code &&
+    cartAddr.country_code === selected.country_code &&
+    (cartAddr.phone ?? '') === (selected.phone ?? '')
+  );
+}
+
 // Rebuilt against the new AyurvedaOne design system (screen_Checkout.html, isCheckout block), same
 // layout as the original mock build - now driven by a real Medusa cart (docs/STORE_API.md section
 // 6) instead of the local computeCartTotals fake math. Payment now goes through the real Razorpay
@@ -67,6 +87,12 @@ export default function CheckoutScreen() {
   const [cart, setCart] = useState<MedusaCart | null>(null);
   const [address, setAddress] = useState<MedusaAddress | null>(null);
   const [shippingOption, setShippingOption] = useState<MedusaShippingOption | null>(null);
+  // Mirrors `shippingOption` for loadCheckout to read without depending on it directly - loadCheckout
+  // itself calls setShippingOption, so including the state value in its own useCallback deps would
+  // change its identity every time it runs, which useFocusEffect (below) would then read as "re-run
+  // the effect" while the screen is still focused - an infinite reload loop.
+  const shippingOptionRef = useRef<MedusaShippingOption | null>(null);
+  shippingOptionRef.current = shippingOption;
 
   const [startingPayment, setStartingPayment] = useState(false);
   const [razorpaySession, setRazorpaySession] = useState<RazorpayCheckoutParams | null>(null);
@@ -81,18 +107,35 @@ export default function CheckoutScreen() {
     setLoading(true);
     setLoadError(null);
     try {
-      const cartId = await getCartId();
-      const addresses = await fetchAddresses();
+      // getCartId (usually an already-cached in-memory id, see cartSync.ts) and fetchAddresses
+      // don't depend on each other - running them together instead of one-after-another cuts one
+      // full round trip off every single load, not just the first.
+      const [cartId, addresses] = await Promise.all([getCartId(), fetchAddresses()]);
       const selected = addresses.find((a) => a.is_default_shipping) ?? addresses[0] ?? null;
       setAddress(selected);
 
+      let currentCart = await fetchCart(cartId);
+
       if (!selected) {
-        setCart(await fetchCart(cartId));
+        setCart(currentCart);
         setShippingOption(null);
         return;
       }
 
-      let currentCart = await setCartAddress(cartId, customer.email, {
+      // Re-focusing this screen (it stays mounted underneath "Change address"/back navigation, see
+      // the useFocusEffect comment below) previously re-ran setCartAddress -> fetchShippingOptions
+      // -> addShippingMethod unconditionally every single time, even when nothing about the
+      // address had changed since the last visit - 3 sequential network round trips for no reason.
+      // Skipping the whole chain when the cart's stored address already matches and a shipping
+      // method is already attached (and this screen already resolved one before, so `shippingOption`
+      // has something to keep showing) is what actually fixes the repeat-visit slowness; a real
+      // address change still falls through and re-resolves everything, same as before.
+      if (addressesMatch(currentCart.shipping_address, selected) && currentCart.shipping_total > 0 && shippingOptionRef.current) {
+        setCart(currentCart);
+        return;
+      }
+
+      currentCart = await setCartAddress(cartId, customer.email, {
         first_name: selected.first_name ?? '',
         last_name: selected.last_name ?? undefined,
         company: selected.company ?? undefined,

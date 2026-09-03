@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsElevation } from '@/theme';
 import { TrashIcon } from '@/icons';
@@ -10,6 +10,11 @@ interface CartLineCardProps {
   onInc: () => void;
   onDec: () => void;
   onRemove: () => void;
+  // Set by Cart (cartApi.ts's mutatingLineIds) while this line's own qty/remove mutation is in
+  // flight - shows a small spinner in place of the qty number and ignores taps meanwhile, instead
+  // of Cart hiding its whole line list behind a full-page loader for the mutation's duration.
+  // Optional and unused by MiniCartSheet, which doesn't drive real cart mutations from its rows.
+  busy?: boolean;
 }
 
 // Rebuilt against the new AyurvedaOne design system (screen_Cart.html, byte-for-byte identical
@@ -27,7 +32,7 @@ interface CartLineCardProps {
 // its OWN real discount%, rather than only a blended average across every line in the cart
 // (which the Order summary's Total row used to show and doesn't correspond to any single
 // product).
-export const CartLineCard = React.memo(function CartLineCard({ line, onInc, onDec, onRemove }: CartLineCardProps) {
+export const CartLineCard = React.memo(function CartLineCard({ line, onInc, onDec, onRemove, busy }: CartLineCardProps) {
   const atOne = line.qty <= 1;
   return (
     <View style={styles.card}>
@@ -49,18 +54,22 @@ export const CartLineCard = React.memo(function CartLineCard({ line, onInc, onDe
           </View>
           <Text style={styles.forEach}>for each</Text>
         </View>
-        <Pressable onPress={onRemove} style={styles.removeButton} hitSlop={6}>
+        <Pressable onPress={onRemove} style={styles.removeButton} hitSlop={6} disabled={busy}>
           <TrashIcon size={18} color={ds.dangerInk} />
         </Pressable>
       </View>
       <View style={styles.divider} />
       <View style={styles.bottomRow}>
         <View style={styles.stepper}>
-          <Pressable onPress={onDec} style={styles.stepTap} hitSlop={6}>
+          <Pressable onPress={onDec} style={styles.stepTap} hitSlop={6} disabled={busy}>
             {atOne ? <TrashIcon size={14} color={ds.dangerInk} /> : <Text style={styles.stepSymbol}>−</Text>}
           </Pressable>
-          <Text style={styles.stepQty}>{line.qty}</Text>
-          <Pressable onPress={onInc} style={styles.stepTap} hitSlop={6}>
+          {busy ? (
+            <ActivityIndicator size="small" color={ds.primaryInk} />
+          ) : (
+            <Text style={styles.stepQty}>{line.qty}</Text>
+          )}
+          <Pressable onPress={onInc} style={styles.stepTap} hitSlop={6} disabled={busy}>
             <Text style={styles.stepSymbol}>+</Text>
           </Pressable>
         </View>

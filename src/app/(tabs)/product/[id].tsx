@@ -75,6 +75,31 @@ function addFlashLabel(name: string): string {
   return name.split(' ').slice(0, 2).join(' ') + ' added';
 }
 
+interface ManufacturerInfo {
+  stats: { value: string; label: string }[];
+  usps: string[];
+  about: string;
+}
+
+// Reads the real product's own collection.metadata.manufacturer (set by the admin's
+// "About the manufacturer" widget on the collection, manufacturer-info.tsx) - null whenever it
+// hasn't been configured for this product's collection, which hides the whole section below
+// rather than showing an empty/broken card. Only used for real products; the mock catalog path
+// keeps its own always-on static content unchanged (see this file's own top comment).
+function parseManufacturerInfo(raw: unknown): ManufacturerInfo | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as any;
+  const about = typeof r.about === 'string' ? r.about.trim() : '';
+  if (!about) return null;
+  const stats = Array.isArray(r.stats)
+    ? r.stats
+        .filter((s: any) => s && typeof s.value === 'string' && s.value.trim() && typeof s.label === 'string' && s.label.trim())
+        .map((s: any) => ({ value: s.value.trim(), label: s.label.trim() }))
+    : [];
+  const usps = Array.isArray(r.usps) ? r.usps.filter((u: any) => typeof u === 'string' && u.trim()).map((u: string) => u.trim()) : [];
+  return { stats, usps, about };
+}
+
 // Rebuilt against the new AyurvedaOne design system (Various Mobile App - Phone.dc.html, `isProduct`
 // block + the global `showAddBar` sticky footer, which the new source renders OUTSIDE any per-screen
 // sc-if — implemented here as a screen-local footer, matching this app's existing Checkout-screen
@@ -110,6 +135,7 @@ export default function ProductScreen() {
 
   const product: Product | undefined = mockProduct ?? (detail.product ? toProduct(detail.product) : undefined);
   const isReal = !mockProduct && !!product?.medusaId;
+  const manufacturerInfo = mockProduct ? null : parseManufacturerInfo(detail.product?.collection?.metadata?.manufacturer);
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxPick, setLightboxPick] = useState(0);
@@ -851,36 +877,44 @@ export default function ProductScreen() {
           </>
         )}
 
-        <View style={styles.sectionHeaderBlock}>
-          <Text style={styles.sectionTitle}>About the manufacturer</Text>
-          <Text style={styles.sectionSubtitle}>Who makes this product</Text>
-        </View>
-        <View style={styles.card}>
-          <Text style={styles.aboutTitle}>{mockProduct ? brandLegalName : product.brand || brandLegalName}</Text>
-          <View style={styles.statsGrid}>
-            {brandStats.map((s) => (
-              <View key={s.label} style={styles.statBox}>
-                <Text style={styles.statValue}>{s.value}</Text>
-                <Text style={styles.statLabel}>{s.label}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.uspsRow}>
-            {brandUsps.map((u) => (
-              <View key={u} style={styles.uspPill}>
-                <CheckThinIcon size={10} color={ds.primaryInk} />
-                <Text style={styles.uspText}>{u}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.divider} />
-          <Text style={styles.policyBody}>{brandAbout}</Text>
-          <Pressable onPress={playBrandVideo} style={styles.videoBox}>
-            <View style={styles.playButton}>
-              <PlayIcon size={16} color={ds.surface} />
+        {(mockProduct || manufacturerInfo) && (
+          <>
+            <View style={styles.sectionHeaderBlock}>
+              <Text style={styles.sectionTitle}>About the manufacturer</Text>
+              <Text style={styles.sectionSubtitle}>Who makes this product</Text>
             </View>
-          </Pressable>
-        </View>
+            <View style={styles.card}>
+              <Text style={styles.aboutTitle}>{mockProduct ? brandLegalName : product.brand || brandLegalName}</Text>
+              {(mockProduct ? brandStats : manufacturerInfo!.stats).length > 0 && (
+                <View style={styles.statsGrid}>
+                  {(mockProduct ? brandStats : manufacturerInfo!.stats).map((s) => (
+                    <View key={s.label} style={styles.statBox}>
+                      <Text style={styles.statValue}>{s.value}</Text>
+                      <Text style={styles.statLabel}>{s.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+              {(mockProduct ? brandUsps : manufacturerInfo!.usps).length > 0 && (
+                <View style={styles.uspsRow}>
+                  {(mockProduct ? brandUsps : manufacturerInfo!.usps).map((u) => (
+                    <View key={u} style={styles.uspPill}>
+                      <CheckThinIcon size={10} color={ds.primaryInk} />
+                      <Text style={styles.uspText}>{u}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+              <View style={styles.divider} />
+              <Text style={styles.policyBody}>{mockProduct ? brandAbout : manufacturerInfo!.about}</Text>
+              <Pressable onPress={playBrandVideo} style={styles.videoBox}>
+                <View style={styles.playButton}>
+                  <PlayIcon size={16} color={ds.surface} />
+                </View>
+              </Pressable>
+            </View>
+          </>
+        )}
 
         <View style={styles.bottomSpacer} />
       </ScrollView>

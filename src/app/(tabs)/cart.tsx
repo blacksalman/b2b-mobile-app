@@ -62,6 +62,7 @@ export default function CartScreen() {
     hasDiscount,
     mrpTotalLabel,
     updateQuantity,
+    mutatingLineIds,
   } = useRealCart();
 
   const goHome = () => router.push('/');
@@ -118,7 +119,14 @@ export default function CartScreen() {
         {!loading && lines.length > 0 && (
           <View style={styles.lines}>
             {lines.map((line) => (
-              <CartLineCard key={line.id} line={toCartLine(line)} onInc={() => lineInc(line)} onDec={() => lineDec(line)} onRemove={() => lineRemove(line)} />
+              <CartLineCard
+                key={line.id}
+                line={toCartLine(line)}
+                onInc={() => lineInc(line)}
+                onDec={() => lineDec(line)}
+                onRemove={() => lineRemove(line)}
+                busy={mutatingLineIds.has(line.id)}
+              />
             ))}
           </View>
         )}
