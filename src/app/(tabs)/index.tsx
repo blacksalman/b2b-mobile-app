@@ -168,8 +168,8 @@ export default function HomeScreen() {
 
         {/* Prescription at a glance */}
         <DsSectionHeader
-          title="Shop by Concern"
-          subtitle="Browse curated Ayurvedic product ranges across key health concerns."
+          title="Explore by product form"
+          subtitle="Browse ayurvedic products by formulation type."
           actionLabel="View all"
           onAction={goCategories}
         />
@@ -207,12 +207,12 @@ export default function HomeScreen() {
             stepper) is the real product. */}
         {apiData.fastMovingLoading ? (
           <>
-            <DsSectionHeader title="Fast-moving offers" subtitle="Price, pack and use case in one glance" />
+            <DsSectionHeader title="Products in demand" subtitle="Popular picks for your next order" />
             <FastMovingSkeleton />
           </>
         ) : fastMoving.length > 0 && (
           <>
-            <DsSectionHeader title="Fast-moving offers" subtitle="Price, pack and use case in one glance" />
+            <DsSectionHeader title="Products in demand" subtitle="Popular picks for your next order" />
             <View style={styles.fastMovingList}>
               {fastMoving.map((p) => {
                 const qty = p.cartQty;
@@ -339,7 +339,7 @@ export default function HomeScreen() {
             skus is each collection's real product count (GET /store/products-search?collection_id
             with limit=1, reading `count`). initials/line/tint have no backend source, same
             placeholder approach as everywhere else real data doesn't cover a design field yet. */}
-        <DsSectionHeader title="Brands to know" subtitle="Direct trade partners, no middle margin" />
+        <DsSectionHeader title="Brands for your practice" subtitle="Choose trusted ayurvedic brands." />
         {apiData.brandsLoading ? (
           <BrandsRowSkeleton />
         ) : (
@@ -371,7 +371,6 @@ export default function HomeScreen() {
           <>
             <DsSectionHeader
               title="Best sellers"
-              subtitle="Top-moving cases across every outlet"
               actionLabel="View all"
               onAction={goCategories}
             />
@@ -381,7 +380,6 @@ export default function HomeScreen() {
           <>
             <DsSectionHeader
               title="Best sellers"
-              subtitle="Top-moving cases across every outlet"
               actionLabel="View all"
               onAction={goCategories}
             />
@@ -470,7 +468,6 @@ export default function HomeScreen() {
           <>
             <DsSectionHeader
               title="Featured products"
-              subtitle="Hand-picked by your account manager."
               actionLabel="View all"
               onAction={goCategories}
             />
@@ -480,7 +477,6 @@ export default function HomeScreen() {
           <>
             <DsSectionHeader
               title="Featured products"
-              subtitle="Hand-picked by your account manager."
               actionLabel="View all"
               onAction={goCategories}
             />
@@ -516,7 +512,6 @@ export default function HomeScreen() {
               </View>
               <View style={styles.concernText}>
                 <Text style={styles.concernTitle}>{c.title}</Text>
-                <Text style={styles.concernBlurb}>{c.blurb}</Text>
               </View>
               <ChevronRightIcon size={18} color={ds.primaryInk} strokeWidth={2} />
             </Pressable>

@@ -50,6 +50,21 @@ function sleep(ms: number): Promise<void> {
 // Checkout would otherwise re-PATCH onto it - lets loadCheckout skip setCartAddress/
 // fetchShippingOptions/addShippingMethod entirely on a repeat visit where nothing changed, rather
 // than re-running that whole chain on every single focus regardless.
+// Prefers a real delivery option over a self-pickup one when auto-selecting checkout's default
+// shipping method - picking "cheapest by amount" alone (the old logic) started silently defaulting
+// to "Express Pickup" the moment that option became eligible for a cart's address, which reads as
+// this order being pickup-only when the customer never asked for that. Pickup is meant to be a
+// separate Ops-side action (see the Local Courier dispatch plan's "Physically Collected" flow), not
+// something checkout quietly opts a customer into. Falls back to the cheapest pickup option only if
+// genuinely nothing else is available, so checkout never has zero shipping options to show.
+function pickDefaultShippingOption(options: MedusaShippingOption[]): MedusaShippingOption | null {
+  if (!options.length) return null;
+  const isPickup = (o: MedusaShippingOption) => /pickup/i.test(o.name);
+  const deliveryOptions = options.filter((o) => !isPickup(o));
+  const pool = deliveryOptions.length ? deliveryOptions : options;
+  return pool.reduce((min, o) => (o.amount < min.amount ? o : min));
+}
+
 function addressesMatch(cartAddr: MedusaCart['shipping_address'], selected: MedusaAddress): boolean {
   if (!cartAddr) return false;
   return (
@@ -149,7 +164,7 @@ export default function CheckoutScreen() {
       });
 
       const options = await fetchShippingOptions(cartId);
-      const cheapest = options.length ? options.reduce((min, o) => (o.amount < min.amount ? o : min)) : null;
+      const cheapest = pickDefaultShippingOption(options);
       setShippingOption(cheapest);
 
       // shipping_total > 0 means a shipping method is already attached from an earlier visit to
