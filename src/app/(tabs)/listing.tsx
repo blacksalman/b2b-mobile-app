@@ -202,12 +202,9 @@ export default function ListingScreen() {
         onToggleMulti={toggleFilterMulti}
         onClear={clearFilters}
         resultCount={isReal ? productsState.count : undefined}
-        // This page is already locked to one brand (collectionId) - showing the full brand
-        // list here would let picking a *different* brand silently do nothing (this page
-        // ignores filters.brand entirely, see realFilters above), so it's hidden rather than
-        // shown-but-broken.
-        brandOptions={isReal ? [] : undefined}
-        concernOptions={isReal ? productFacets.concerns : undefined}
+        // No brandOptions here any more: the sheet no longer has a Brand section at all, which also
+        // removes the empty "Brand" heading this page used to show (it passed an empty list on
+        // purpose, being already locked to one brand via collectionId).
         formOptions={isReal ? productFacets.forms : undefined}
         ingredientOptions={isReal ? productFacets.ingredients : undefined}
       />

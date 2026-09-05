@@ -5,8 +5,6 @@ import { ds, dsRadii, dsSpacing, dsType } from '@/theme';
 import { CheckThinIcon, CloseIcon } from '@/icons';
 import {
   availOptions,
-  brandOptions as mockBrandOptions,
-  concernOptions as mockConcernOptions,
   countNonSortFilters,
   formOptions as mockFormOptions,
   ingredientOptions as mockIngredientOptions,
@@ -43,14 +41,11 @@ interface FilterSheetProps {
   // so Categories/Listing (not touched this round) still compile unchanged; falls back to a static
   // "Apply filters" label until a call site passes this.
   resultCount?: number;
-  // Real collection names (Categories screen) override the mock catalog's fake brand list
-  // (categories-content.ts's brandOptions, computed from mock products) - optional so Listing
-  // (still fully mock, not touched this round) keeps using the mock list unchanged.
-  brandOptions?: string[];
   // Real, catalog-wide values actually tagged on products (useProductFacets) override
-  // categories-content.ts's static mock lists, same optional-override shape as brandOptions -
-  // falls back to the mock lists if a caller doesn't pass these (there is currently none).
-  concernOptions?: string[];
+  // categories-content.ts's static mock lists - falls back to the mock lists if a caller doesn't
+  // pass these. There is deliberately no brandOptions/concernOptions counterpart any more: both
+  // sections were removed from the sheet (see the render below), so accepting options for them
+  // would be a prop that silently does nothing.
   formOptions?: string[];
   ingredientOptions?: string[];
 }
@@ -70,14 +65,10 @@ export function FilterSheet({
   onToggleMulti,
   onClear,
   resultCount,
-  brandOptions,
-  concernOptions,
   formOptions,
   ingredientOptions,
 }: FilterSheetProps) {
   const insets = useSafeAreaInsets();
-  const effectiveBrandOptions = brandOptions ?? mockBrandOptions;
-  const effectiveConcernOptions = concernOptions ?? mockConcernOptions;
   const effectiveFormOptions = formOptions ?? mockFormOptions;
   const effectiveIngredientOptions = ingredientOptions ?? mockIngredientOptions;
 
@@ -122,18 +113,13 @@ export function FilterSheet({
             isSelected={(o) => selections.avail.includes(o)}
             onPick={(o) => onToggleMulti('avail', o)}
           />
-          <FilterSection
-            title="Brand"
-            options={effectiveBrandOptions}
-            isSelected={(o) => selections.brand.includes(o)}
-            onPick={(o) => onToggleMulti('brand', o)}
-          />
-          <FilterSection
-            title="Concern"
-            options={effectiveConcernOptions}
-            isSelected={(o) => selections.concern.includes(o)}
-            onPick={(o) => onToggleMulti('concern', o)}
-          />
+          {/* Brand and Concern sections were removed on request. Concern had no chips left to show
+              at all (its values come from products' metadata.concerns, which was cleared catalogue-
+              wide), and Brand was already rendering as an empty heading on Listing, which passes an
+              empty list deliberately since that page is locked to one brand. The selections/state
+              behind both (filters.brand, filters.concern) and the query plumbing that consumes them
+              are intentionally left in place and simply stay empty, so either section can come back
+              by re-adding its FilterSection here. */}
           <FilterSection
             title="Product form"
             options={effectiveFormOptions}

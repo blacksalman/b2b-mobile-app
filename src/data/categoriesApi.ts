@@ -90,11 +90,13 @@ export function useProductFacets(): ProductFacets {
 // Maps the filter sheet's mock-era sort/price labels onto what GET /store/products-search
 // actually supports. "Popular" has no real equivalent (no sales-rank/popularity data anywhere
 // in the backend) - stays unmapped, meaning "no explicit sort", same as leaving it off entirely.
+// No 'Newest' entry: that option was removed from the sheet (categories-content.ts's sortOptions),
+// so nothing can select it any more. The route itself still supports sort=newest if it's ever
+// restored.
 const SORT_MAP: Record<string, 'price_asc' | 'price_desc' | 'newest' | undefined> = {
   Popular: undefined,
   'Price: Low to High': 'price_asc',
   'Price: High to Low': 'price_desc',
-  Newest: 'newest',
 };
 
 const PRICE_RANGES: Record<string, { min?: number; max?: number }> = {

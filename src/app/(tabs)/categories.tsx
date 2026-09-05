@@ -66,7 +66,6 @@ export default function CategoriesScreen() {
   const categoryName = categoryId ? (realCategories.find((c) => c.id === categoryId)?.name ?? '') : '';
 
   const realCollections = useCollections();
-  const brandOptions = useMemo(() => realCollections.map((c) => c.title), [realCollections]);
   const productFacets = useProductFacets();
   // filters.brand holds NAMES (what the sheet displays/toggles) - resolved to real collection
   // ids here since that's the only thing GET /store/products-search's collection_id accepts.
@@ -276,8 +275,6 @@ export default function CategoriesScreen() {
         onTogglePrice={setFilterPrice}
         onToggleMulti={toggleFilterMulti}
         onClear={clearFilters}
-        brandOptions={brandOptions}
-        concernOptions={productFacets.concerns}
         formOptions={productFacets.forms}
         ingredientOptions={productFacets.ingredients}
         resultCount={productsState.count}

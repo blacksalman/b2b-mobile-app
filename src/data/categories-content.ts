@@ -19,7 +19,9 @@ export type FilterTabName = (typeof filterTabNames)[number];
 // 2878) — computed from the real product catalog, replacing the old design's static, non-matching
 // ['AYUR VIBES', 'AYURVEDA ONE PVT LTD.'] list (which named brands no seed product actually has).
 export const brandOptions = Array.from(new Set(products.map((p) => p.brand)));
-export const sortOptions = ['Popular', 'Price: Low to High', 'Price: High to Low', 'Newest'];
+// 'Newest' removed on request - the remaining three are what the sheet offers. DEFAULT_FILTERS'
+// 'Popular' is still among them, so the default selection is unaffected.
+export const sortOptions = ['Popular', 'Price: Low to High', 'Price: High to Low'];
 export const priceOptions = ['Under ₹200', '₹200–₹500', '₹500–₹1000', 'Above ₹1000'];
 export const availOptions = ['In stock only', 'Include out of stock'];
 export const ingredientOptions = ['Ashwagandha', 'Triphala', 'Guggulu', 'Amla', 'Bhringraj', 'Kumkumadi'];
