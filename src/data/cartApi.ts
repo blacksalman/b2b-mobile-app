@@ -40,6 +40,14 @@ export interface RealCartLine {
   unitMrp?: number;
   lineTotal: number;
   lineMrpTotal?: number;
+  // Tax-included numeric counterparts of lineTotal/lineMrpTotal, using THIS line's own resolved
+  // GST rate (see taxMult in buildLine). The *Label fields below already render exactly these
+  // numbers; they exist separately because an aggregate across lines has to be summed from
+  // numbers, and lines genuinely differ in rate (this catalog has gst-5/12/18/28 all in use), so
+  // a single blended multiplier applied to a subtotal would be wrong. See buildCartData's
+  // mrpTotal.
+  lineTotalWithTax: number;
+  lineMrpTotalWithTax?: number;
   unitPriceLabel: string;
   unitMrpLabel?: string;
   lineTotalLabel: string;
@@ -100,7 +108,15 @@ function tierBaselinePrice(variant: MedusaVariant | undefined): number | undefin
 // Capsule: 3+ units drops the price with no compare_at_unit_price set) - Cart previously only
 // recognized the MRP case, so a real, active tier discount like that one showed no strike-through
 // at all even though Home/Product Detail already showed it for the same product.
-function buildLine(item: MedusaCartLineItem, product: MedusaProduct | undefined): RealCartLine {
+//
+// Exported (not just used by useRealCart below) so Checkout's own Order summary derives its line
+// prices from this exact function instead of re-deriving them: Checkout used to render a lone
+// `money(unit_price * quantity * taxMult)` with its own inline copy of the taxMult formula and no
+// MRP/discount handling at all, so a line showing a struck 535.50/481.95 on Cart silently lost the
+// strike-through one screen later. Pure function of (line item, its product), so Checkout can feed
+// it the cart it already has - see checkout.tsx. Passing `undefined` for `product` is valid and
+// simply means no quantity-tier baseline is available (compare_at_unit_price still applies).
+export function buildLine(item: MedusaCartLineItem, product: MedusaProduct | undefined): RealCartLine {
   const realMrp = item.compare_at_unit_price ?? undefined;
   const tierBaseline = realMrp === undefined ? tierBaselinePrice(product?.variants?.find((v) => v.id === item.variant_id)) : undefined;
   const mrp = realMrp ?? (tierBaseline && tierBaseline > item.unit_price ? tierBaseline : undefined);
@@ -125,6 +141,8 @@ function buildLine(item: MedusaCartLineItem, product: MedusaProduct | undefined)
     unitMrp: hasDiscount ? mrp! : undefined,
     lineTotal,
     lineMrpTotal,
+    lineTotalWithTax: lineTotal * taxMult,
+    lineMrpTotalWithTax: hasDiscount ? lineMrpTotal! * taxMult : undefined,
     unitPriceLabel: money(item.unit_price * taxMult),
     unitMrpLabel: hasDiscount ? money(mrp! * taxMult) : undefined,
     lineTotalLabel: money(lineTotal * taxMult),
@@ -141,8 +159,15 @@ function buildCartData(cart: MedusaCart | null, productsById: Map<string, Medusa
   // item_subtotal/item_tax_total/item_total (not the plain subtotal/tax_total/total fields) -
   // see MedusaCart's own comment: those stay items-only even once Checkout has attached a
   // shipping method to this same cart, which plain `subtotal` does not.
+  // Struck-through pre-discount counterpart of totalLabel (cart.item_total, which IS tax-included).
+  // Summed from each line's own tax-included number rather than the previous
+  // "MRP subtotal + cart.item_tax_total": item_tax_total is the tax on the DISCOUNTED prices, so
+  // adding it to an undiscounted subtotal produced a figure that was neither tax-exclusive nor
+  // tax-inclusive, and disagreed with the per-line strike CartLineCard shows for the very same
+  // line (e.g. 3 x Ashokarishta at MRP 170 vs cart price 153, gst-5: line strike read 535.50 while
+  // this row read 532.95). Both now derive from lineMrpTotalWithTax, so they agree by construction.
   const mrpTotal = hasDiscount
-    ? lines.reduce((sum, l) => sum + (l.hasDiscount ? l.lineMrpTotal! : l.lineTotal), 0) + cart.item_tax_total
+    ? lines.reduce((sum, l) => sum + (l.hasDiscount ? l.lineMrpTotalWithTax! : l.lineTotalWithTax), 0)
     : undefined;
 
   return {

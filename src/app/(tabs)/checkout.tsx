@@ -26,7 +26,8 @@ import {
   type MedusaCart,
   type MedusaShippingOption,
 } from '@/lib/medusaCart';
-import { RAZORPAY_KEY_ID } from '@/lib/medusaClient';
+import { RAZORPAY_KEY_ID, fetchProductsByIds, type MedusaProduct } from '@/lib/medusaClient';
+import { buildLine } from '@/data/cartApi';
 import { fetchAddresses, type MedusaAddress } from '@/lib/medusaAddresses';
 import { money } from '@/utils/money';
 import { stripHtml } from '@/utils/stripHtml';
@@ -100,6 +101,10 @@ export default function CheckoutScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [cart, setCart] = useState<MedusaCart | null>(null);
+  // Only feeds buildLine's quantity-tier baseline lookup (the struck MRP on a discounted line) -
+  // that baseline lives on the variant's price rows, not on the cart line, so the cart response
+  // alone can't produce it. Kept deliberately out of the load's critical path, see loadCheckout.
+  const [productsById, setProductsById] = useState<Map<string, MedusaProduct>>(new Map());
   const [address, setAddress] = useState<MedusaAddress | null>(null);
   const [shippingOption, setShippingOption] = useState<MedusaShippingOption | null>(null);
   // Mirrors `shippingOption` for loadCheckout to read without depending on it directly - loadCheckout
@@ -130,6 +135,21 @@ export default function CheckoutScreen() {
       setAddress(selected);
 
       let currentCart = await fetchCart(cartId);
+
+      // Deliberately NOT awaited, and deliberately started here so it overlaps the
+      // setCartAddress -> fetchShippingOptions -> addShippingMethod chain below instead of adding a
+      // fourth serial round trip to a load this function already works hard to keep short. Nothing
+      // downstream depends on it - it only enriches the Order summary's struck MRP, and the render
+      // treats a missing product exactly like a product with no tier baseline (no strike-through,
+      // correct price either way), so the strike simply appears a moment later on a slow network.
+      // A failure here must never fail checkout itself, hence the swallowed catch.
+      if (currentCart.items.length) {
+        fetchProductsByIds([...new Set(currentCart.items.map((i) => i.product_id))])
+          .then((products) => setProductsById(new Map(products.map((p) => [p.id, p] as const))))
+          .catch(() => {});
+      } else {
+        setProductsById(new Map());
+      }
 
       if (!selected) {
         setCart(currentCart);
@@ -351,6 +371,24 @@ export default function CheckoutScreen() {
 
   const shippingFeeLabel = shippingOption ? money(shippingOption.amount) : money(cart.shipping_total);
 
+  // Built once here rather than inside the row map, since the Total row below needs the same lines
+  // to work out what was saved - see cartApi.ts's buildLine for what each line resolves.
+  const lines = cart.items.map((item) => buildLine(item, productsById.get(item.product_id)));
+
+  // Pre-discount counterpart of cart.total, for the struck figure on the Total row. Derived as
+  // "real total + what the discounts took off" rather than by rebuilding the total from
+  // items + shipping: cart.total is the only number here that's authoritative about everything
+  // folded into it (shipping and its tax, and anything else Medusa applies), so adding the savings
+  // back onto it stays correct without this screen having to re-model how a total is composed.
+  // Savings are per line and tax-included, matching the struck per-line figures shown above.
+  const discountSavings = lines.reduce(
+    (sum, l) => sum + (l.hasDiscount ? l.lineMrpTotalWithTax! - l.lineTotalWithTax : 0),
+    0
+  );
+  // Guarded against float dust (1.05 multipliers don't land exactly) so a cart with no real
+  // discount never shows a struck total a fraction of a paisa above the real one.
+  const hasDiscount = discountSavings > 0.005;
+
   return (
     <View style={styles.screen}>
       <View style={[styles.header, { paddingTop: insets.top + dsSpacing.md }]}>
@@ -409,11 +447,13 @@ export default function CheckoutScreen() {
         <View>
           <Text style={[styles.sectionTitle, styles.sectionTitleSpaced]}>Order summary</Text>
           <View style={[styles.card, styles.summaryCard]}>
-            {cart.items.map((line) => {
-              // Same real per-line GST rate the real cart's own tax calculation already resolved
-              // (confirmed live) that Cart (cartApi.ts's buildLine) applies - shows the same
-              // tax-included number here instead of the raw tax-exclusive unit_price.
-              const taxMult = 1 + (line.tax_lines?.reduce((sum, t) => sum + t.rate, 0) ?? 0) / 100;
+            {lines.map((line) => {
+              // Built by cartApi.ts's buildLine - the exact same function backing Cart's own line
+              // rows - so the tax-included price, the struck MRP and the discount% shown here are
+              // the same numbers by construction rather than by a second implementation that can
+              // drift (this screen previously re-derived only the price, with its own copy of the
+              // taxMult formula and no MRP handling, so a discounted line lost its strike-through
+              // between Cart and Checkout).
               return (
                 <View key={line.id} style={styles.lineRow}>
                   {line.thumbnail ? (
@@ -422,9 +462,12 @@ export default function CheckoutScreen() {
                     <View style={styles.lineThumb} />
                   )}
                   <Text style={styles.lineName} numberOfLines={1}>
-                    {line.quantity} × {line.product_title}
+                    {line.qty} × {line.name}
                   </Text>
-                  <Text style={styles.lineTotal}>{money(line.unit_price * line.quantity * taxMult)}</Text>
+                  <View style={styles.linePrices}>
+                    {line.hasDiscount && <Text style={styles.lineMrpStrike}>{line.lineMrpTotalLabel}</Text>}
+                    <Text style={styles.lineTotal}>{line.lineTotalLabel}</Text>
+                  </View>
                 </View>
               );
             })}
@@ -444,7 +487,10 @@ export default function CheckoutScreen() {
             <View style={styles.divider} />
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total amount</Text>
-              <Text style={styles.totalValue}>{money(cart.total)}</Text>
+              <View style={styles.totalRight}>
+                {hasDiscount && <Text style={styles.mrpStrike}>{money(cart.total + discountSavings)}</Text>}
+                <Text style={styles.totalValue}>{money(cart.total)}</Text>
+              </View>
             </View>
           </View>
         </View>
@@ -615,12 +661,20 @@ const styles = StyleSheet.create({
   lineRow: { flexDirection: 'row', alignItems: 'center', gap: dsSpacing.sm, paddingVertical: dsSpacing.sm },
   lineThumb: { flexShrink: 0, width: 36, height: 36, borderRadius: dsRadii.input, backgroundColor: ds.primarySoft },
   lineName: { flex: 1, minWidth: 0, fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
+  // Struck MRP sits above the real price, same treatment CartLineCard gives a discounted line's
+  // total (mrpTotal there) so the two screens read identically.
+  linePrices: { flexShrink: 0, alignItems: 'flex-end' },
+  lineMrpStrike: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, textDecorationLine: 'line-through' },
   lineTotal: { flexShrink: 0, fontFamily: dsFontFamily[700], fontSize: 14, lineHeight: 20, color: ds.ink },
   divider: { height: 1, backgroundColor: ds.line, marginVertical: dsSpacing.sm },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   summaryLabel: { fontFamily: dsFontFamily[400], fontSize: 14, lineHeight: 21, color: ds.ink2 },
   summaryValue: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.ink },
   totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  // Same stacked struck-above-real treatment as Cart's own total row (cart.tsx's totalRight/
+  // mrpStrike), so the two screens present a discounted total identically.
+  totalRight: { alignItems: 'flex-end' },
+  mrpStrike: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3, textDecorationLine: 'line-through' },
   totalLabel: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, letterSpacing: -0.18, color: ds.ink },
   totalValue: { fontFamily: dsFontFamily[700], fontSize: 18, lineHeight: 24, color: ds.primaryInk },
   policiesCard: { backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, overflow: 'hidden', ...dsElevation.e1 },
