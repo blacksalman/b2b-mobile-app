@@ -5,12 +5,24 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { LocationPinIcon, OrderBoxIcon, ShoppingBagIcon, SmallBackChevronIcon } from '@/icons';
-import { useOrder, orderStatusFor, orderItemCount, orderDispatchDate, orderDeliveryDate, ORDER_STATUS_STYLE } from '@/data/ordersApi';
+import { useOrder, orderStatusFor, orderItemCount, orderDispatchDate, orderDeliveryDate, orderDeliveryEstimate, ORDER_STATUS_STYLE } from '@/data/ordersApi';
 import { money } from '@/utils/money';
 
 function formatDate(iso: string | null): string {
   if (!iso) return 'Pending';
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+// "Pending" is only honest while there's genuinely nothing to say. Once the order carries the
+// estimate captured at checkout, show that instead - the same date the customer was given on the
+// order-confirmed screen - clearly marked as an estimate so it can't be mistaken for a real
+// delivery. A real delivered_at always wins. The backend already formatted the estimate, so it's
+// rendered verbatim rather than re-parsed through formatDate, which would restyle the same day
+// into a different-looking string than the one shown at checkout.
+function formatDeliveryDate(deliveredAt: string | null, estimate: string | null): string {
+  if (deliveredAt) return formatDate(deliveredAt);
+  if (estimate) return `Est. ${estimate}`;
+  return 'Pending';
 }
 
 // Rebuilt against the real backend (GET /store/orders/:id, ordersApi.ts's useOrder) - previously
@@ -89,7 +101,9 @@ export default function OrderDetailScreen() {
               </View>
               <View style={styles.summaryCell}>
                 <Text style={styles.summaryLabel}>Delivery Date</Text>
-                <Text style={styles.summaryValue}>{formatDate(orderDeliveryDate(order))}</Text>
+                <Text style={styles.summaryValue}>
+                  {formatDeliveryDate(orderDeliveryDate(order), orderDeliveryEstimate(order))}
+                </Text>
               </View>
             </View>
             <View style={[styles.statusStrip, { backgroundColor: statusStyle.bg }]}>

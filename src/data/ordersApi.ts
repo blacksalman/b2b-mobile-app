@@ -129,6 +129,19 @@ export function orderDeliveryDate(order: MedusaOrder): string | null {
   return activeFulfillment(order)?.delivered_at ?? null;
 }
 
+// The delivery date the customer was promised on the order-confirmed screen, captured onto the
+// order at order.placed (backend's order-delivery-estimate subscriber) rather than recomputed -
+// see MedusaOrder.metadata for why recomputing drifts. Already formatted by the backend, so Order
+// Details renders the identical string shown at checkout instead of re-deriving IST calendar
+// formatting here and risking a different-looking date for the same day.
+//
+// Deliberately still returned once the date has passed: an estimate that quietly disappears reads
+// as information being withheld, whereas a visibly stale estimate next to a still-undispatched
+// order is the honest state of things. Only ever supplanted by a real delivered_at.
+export function orderDeliveryEstimate(order: MedusaOrder): string | null {
+  return order.metadata?.delivery_estimate?.formatted ?? null;
+}
+
 export interface OrdersListData {
   loading: boolean;
   error: boolean;

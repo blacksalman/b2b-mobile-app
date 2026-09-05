@@ -507,6 +507,20 @@ export interface MedusaOrder {
   items: MedusaOrderLineItem[];
   shipping_address: MedusaOrderAddress | null;
   fulfillments: MedusaOrderFulfillment[];
+  // Written once at order.placed by the backend's order-delivery-estimate subscriber, from the same
+  // Delhivery TAT + dispatch-cutoff logic behind GET /store/delivery-tat. A point-in-time capture,
+  // deliberately not recomputed: the estimate is relative to when it was taken, so asking again
+  // later returns a later date. Absent on orders placed before this existed, on pickup orders, and
+  // whenever the lookup failed - all of which are normal, hence every field being optional.
+  metadata: {
+    delivery_estimate?: {
+      /** YYYY-MM-DD */
+      date: string;
+      formatted: string;
+      dispatch_date?: string;
+      captured_at?: string;
+    };
+  } | null;
 }
 
 // `items.quantity` (the shorthand path) silently vanishes from the response - confirmed live -
@@ -540,6 +554,7 @@ const ORDER_FIELDS = [
   'fulfillments.shipped_at',
   'fulfillments.delivered_at',
   'fulfillments.canceled_at',
+  'metadata',
 ].join(',');
 
 type RawOrderLineItem = Omit<MedusaOrderLineItem, 'quantity'> & { detail: { quantity: number } };
