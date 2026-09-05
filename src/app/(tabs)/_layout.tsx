@@ -72,6 +72,22 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      // Without this, every back button in the app lands on Home. A TabRouter defaults to
+      // backBehavior 'firstRoute' (@react-navigation/routers SwitchRouter.tsx's own default), which
+      // makes GO_BACK jump to routes[0] - `index` below - rather than to wherever you actually came
+      // from, so Home -> Categories -> Product -> back went to Home instead of Categories. That hits
+      // every screen here, not just Product, since they're all siblings of this one navigator (see
+      // the note above on why this is a real <Tabs/> and not a stack), and it hits router.back()
+      // call sites and the Android hardware back button alike - both dispatch GO_BACK.
+      //
+      // 'fullHistory' over plain 'history' because routes here carry params that identify what
+      // you were looking at (/categories?categoryId=X, /listing filters, /product/[id]): it records
+      // params per history entry and restores them on the way back, where 'history' only restores
+      // the route. That also makes back work between two visits to the SAME route with different
+      // params - Product A -> a related Product B -> back returns to A, which matters because a
+      // product page links out to alternate/same-category/also-bought products, and every one of
+      // those is this single `product/[id]` tab route.
+      backBehavior="fullHistory"
       screenOptions={{ headerShown: false, animation: 'none' }}
       tabBar={() => (
         <View style={styles.tabBarWrap}>
