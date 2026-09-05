@@ -177,10 +177,13 @@ export function fetchProductFacets(): Promise<ProductFacets> {
 }
 
 // GET /store/app-config (src/api/store/app-config/route.ts) - runtime settings the admin's
-// Settings > App Config page controls (Store.metadata), currently just the quantity at which a
-// product card's stepper shows the "buy in bulk on the product page" nudge.
+// Settings > App Config page controls (Store.metadata): the quantity at which a product card's
+// stepper shows the "buy in bulk on the product page" nudge, and the support number the
+// order-confirmed screen tells customers to call. The route always sends both, falling back to
+// its own defaults when the admin has never saved them.
 export interface AppConfig {
   bulk_qty_threshold: number;
+  support_phone: string;
 }
 
 export function fetchAppConfig(): Promise<AppConfig> {

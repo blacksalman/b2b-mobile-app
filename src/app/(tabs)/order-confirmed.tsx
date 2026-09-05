@@ -6,6 +6,7 @@ import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing } from '@/theme';
 import { CheckThinIcon, OrderBoxIcon } from '@/icons';
 import { money } from '@/utils/money';
 import { fetchDeliveryEstimate } from '@/lib/medusaClient';
+import { useAppState } from '@/state/AppStateContext';
 
 const FALLBACK_DELIVERY_ESTIMATE = '2–3 business days';
 
@@ -26,6 +27,7 @@ export default function OrderConfirmedScreen() {
     amount?: string;
     pincode?: string;
   }>();
+  const { supportPhone } = useAppState();
   const amountLabel = amount ?? money(0);
   const displayIdLabel = displayId ?? '';
 
@@ -53,7 +55,10 @@ export default function OrderConfirmedScreen() {
     if (orderId) router.push(`/orders/${orderId}`);
   };
   const continueShopping = () => router.push('/');
-  const callSupport = () => Linking.openURL('tel:08049670477');
+  // Admin-configurable (Settings > App Config -> support_phone on Store.metadata), read from the
+  // one app-config fetch AppStateContext already does at startup. Displayed exactly as the admin
+  // typed it; only the `tel:` URL strips spaces/dashes, which some dialers refuse to parse.
+  const callSupport = () => Linking.openURL(`tel:${supportPhone.replace(/[\s-]/g, '')}`);
 
   return (
     <View style={styles.screen}>
@@ -102,7 +107,7 @@ export default function OrderConfirmedScreen() {
           <View style={[styles.card, styles.helpCard]}>
             <Text style={styles.helpText}>Need help with your order?</Text>
             <Pressable onPress={callSupport} hitSlop={4}>
-              <Text style={styles.helpLink}>Call 08049670477</Text>
+              <Text style={styles.helpLink}>Call {supportPhone}</Text>
             </Pressable>
           </View>
         </View>

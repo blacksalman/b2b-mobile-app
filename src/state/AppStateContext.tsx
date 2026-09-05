@@ -12,6 +12,11 @@ import { fetchAppConfig } from '@/lib/medusaClient';
 // jump once the real value arrives in the common case where nobody's changed it from the default.
 const DEFAULT_BULK_QTY_THRESHOLD = 10;
 
+// Same idea for the support number shown on the order-confirmed screen - matches the backend's own
+// DEFAULT_SUPPORT_PHONE (src/api/store/app-config/route.ts), which is the number that used to be
+// hardcoded in that screen, so the app still shows something dialable if the config fetch fails.
+const DEFAULT_SUPPORT_PHONE = '08049670477';
+
 export type FilterMultiKind = 'avail' | 'brand' | 'ing' | 'concern' | 'form';
 
 export interface FilterSelections {
@@ -54,6 +59,7 @@ interface AppState {
   filterOpen: boolean;
   filterTab: FilterTabName;
   bulkQtyThreshold: number;
+  supportPhone: string;
 }
 
 const initialState: AppState = {
@@ -66,6 +72,7 @@ const initialState: AppState = {
   filterOpen: false,
   filterTab: 'Brand',
   bulkQtyThreshold: DEFAULT_BULK_QTY_THRESHOLD,
+  supportPhone: DEFAULT_SUPPORT_PHONE,
 };
 
 type Action =
@@ -77,7 +84,9 @@ type Action =
   | { type: 'SET_QTY'; id: number; qty: number }
   | { type: 'REMOVE_FROM_CART'; id: number }
   | { type: 'SET_CART'; cart: CartState }
-  | { type: 'SET_BULK_QTY_THRESHOLD'; value: number }
+  // One action for the whole GET /store/app-config response rather than one per setting: the
+  // values arrive together in a single fetch, so this is one dispatch and one re-render.
+  | { type: 'SET_APP_CONFIG'; bulkQtyThreshold: number; supportPhone: string }
   | { type: 'CLEAR_CART' }
   | { type: 'SET_LOGGED_IN'; value: boolean }
   | { type: 'SET_CUSTOMER'; customer: MedusaCustomer | null }
@@ -114,8 +123,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, cart: { ...state.cart, [action.id]: Math.max(0, (state.cart[action.id] || 0) - 1) } };
     case 'SET_QTY':
       return { ...state, cart: { ...state.cart, [action.id]: Math.max(0, action.qty) } };
-    case 'SET_BULK_QTY_THRESHOLD':
-      return { ...state, bulkQtyThreshold: action.value };
+    case 'SET_APP_CONFIG':
+      return { ...state, bulkQtyThreshold: action.bulkQtyThreshold, supportPhone: action.supportPhone };
     case 'REMOVE_FROM_CART':
       return { ...state, cart: { ...state.cart, [action.id]: 0 } };
     case 'SET_LOGGED_IN':
@@ -205,15 +214,24 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     hydrateTaxRates();
   }, []);
 
-  // Admin-configurable bulk-order nudge threshold (Settings > App Config) - fetched once here,
-  // same "global config, one fetch, everything reads the cached value" shape as GST rates above,
-  // rather than every product card fetching it independently. Silently keeps the
-  // DEFAULT_BULK_QTY_THRESHOLD fallback already in initialState on failure.
+  // Admin-configurable runtime settings (Settings > App Config): the bulk-order nudge threshold and
+  // the order-confirmed screen's support phone number - fetched once here, same "global config, one
+  // fetch, everything reads the cached value" shape as GST rates above, rather than every product
+  // card (or the order-confirmed screen) fetching it independently. Silently keeps the
+  // DEFAULT_BULK_QTY_THRESHOLD/DEFAULT_SUPPORT_PHONE fallbacks already in initialState on failure.
   useEffect(() => {
     let cancelled = false;
     fetchAppConfig()
       .then((config) => {
-        if (!cancelled) dispatch({ type: 'SET_BULK_QTY_THRESHOLD', value: config.bulk_qty_threshold });
+        if (cancelled) return;
+        dispatch({
+          type: 'SET_APP_CONFIG',
+          bulkQtyThreshold: config.bulk_qty_threshold,
+          // Guarded rather than trusted: an older backend that predates this setting responds
+          // without the field at all, and rendering "Call undefined" would be worse than keeping
+          // the built-in default.
+          supportPhone: config.support_phone?.trim() || DEFAULT_SUPPORT_PHONE,
+        });
       })
       .catch(() => {});
     return () => {
