@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
@@ -63,7 +64,8 @@ export default function CategoriesScreen() {
   }, [params.categoryId]);
 
   const realCategories = useProductCategories();
-  const categoryName = categoryId ? (realCategories.find((c) => c.id === categoryId)?.name ?? '') : '';
+  const selectedCategory = categoryId ? realCategories.find((c) => c.id === categoryId) : undefined;
+  const categoryName = selectedCategory?.name ?? '';
 
   const realCollections = useCollections();
   const productFacets = useProductFacets();
@@ -104,6 +106,12 @@ export default function CategoriesScreen() {
 
   const hasQuery = query.trim().length > 0;
   const catHeading = hasQuery ? `“${query}”` : categoryName || 'All products';
+  // Banner for whichever category is currently selected (admin's Category Image widget ->
+  // metadata.image_url). Only for a real selection: "All" has no single image to stand for it, and
+  // a search hides the chip rail entirely (see the rail's own !hasQuery guard), so a category
+  // banner there would be labelling results that aren't scoped to that category. A category with
+  // no image uploaded renders nothing at all, rather than an empty placeholder frame.
+  const categoryBannerUrl = !hasQuery ? selectedCategory?.metadata?.image_url ?? null : null;
   // Ported verbatim (source line 2960/2966/2972/2983): this count deliberately excludes `sort`,
   // unlike `hasActiveFilters` (used for the pills row above), which does include it. Still shown
   // on the filter badge even though filters don't affect the real grid right now (see the
@@ -207,21 +215,34 @@ export default function CategoriesScreen() {
           if (productsState.hasMore) productsState.loadMore();
         }}
         ListHeaderComponent={
-          hasActiveFilters ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillsRow} contentContainerStyle={styles.pillsRowContent}>
-              {activeFilterPills.map((pill) => (
-                <View key={pill.key} style={styles.pill}>
-                  <Text style={styles.pillText}>{pill.label}</Text>
-                  <Pressable onPress={pill.remove} style={styles.pillRemove} hitSlop={6}>
-                    <CloseIcon size={8} color={ds.primaryInk} strokeWidth={2.6} />
-                  </Pressable>
-                </View>
-              ))}
-              <Pressable onPress={clearFilters} hitSlop={8}>
-                <Text style={styles.clearAll}>Clear all</Text>
-              </Pressable>
-            </ScrollView>
-          ) : null
+          // Banner sits here rather than in the fixed header above: visually it's still directly
+          // below the chip rail, but as part of the list it scrolls away once the customer starts
+          // browsing, instead of permanently costing every screen of the product grid its height.
+          <>
+            {!!categoryBannerUrl && (
+              <Image
+                source={{ uri: categoryBannerUrl }}
+                style={styles.categoryBanner}
+                contentFit="cover"
+                transition={150}
+              />
+            )}
+            {hasActiveFilters ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillsRow} contentContainerStyle={styles.pillsRowContent}>
+                {activeFilterPills.map((pill) => (
+                  <View key={pill.key} style={styles.pill}>
+                    <Text style={styles.pillText}>{pill.label}</Text>
+                    <Pressable onPress={pill.remove} style={styles.pillRemove} hitSlop={6}>
+                      <CloseIcon size={8} color={ds.primaryInk} strokeWidth={2.6} />
+                    </Pressable>
+                  </View>
+                ))}
+                <Pressable onPress={clearFilters} hitSlop={8}>
+                  <Text style={styles.clearAll}>Clear all</Text>
+                </Pressable>
+              </ScrollView>
+            ) : null}
+          </>
         }
         ListEmptyComponent={
           productsState.loading ? (
@@ -346,6 +367,22 @@ const styles = StyleSheet.create({
   skeletonGrid: { paddingHorizontal: dsSpacing.lg },
   body: { flex: 1 },
   bodyContent: { paddingTop: dsSpacing.md, paddingBottom: dsSpacing.xl },
+  // marginHorizontal, not width:'100%': the list's contentContainer (bodyContent) carries no
+  // horizontal padding at all - every other row insets itself (gridRow, skeletonGrid,
+  // pillsRowContent, emptyState all use paddingHorizontal: lg), so a full-width banner was the one
+  // element running edge to edge while the cards below sat inset. Matching lg here lines its edges
+  // up exactly with the product columns, and dsRadii.button matches the cards' own corner radius.
+  //
+  // Fixed height with cover: uploads differ in aspect ratio, and letting each one set its own
+  // height would make the grid jump as you switch chips. primarySoft shows through while the image
+  // loads and if it fails, so the space never reads as a broken frame.
+  categoryBanner: {
+    height: 140,
+    marginHorizontal: dsSpacing.lg,
+    borderRadius: dsRadii.button,
+    backgroundColor: ds.primarySoft,
+    marginBottom: dsSpacing.md,
+  },
   pillsRow: { flexGrow: 0 },
   // No paddingTop here: bodyContent's own paddingTop already sits above this row (it's the
   // list header, inside the content container), so adding another one made the gap above the

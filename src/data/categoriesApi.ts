@@ -5,6 +5,12 @@ export interface MedusaProductCategory {
   id: string;
   name: string;
   handle: string;
+  // Set by the admin's Category Image widget and already returned by GET /store/category-sections
+  // (its query asks for `metadata`) - this type simply didn't carry it before, so the Categories
+  // screen had no way to reach the image even though it was in the response all along. Optional
+  // throughout: a category with no image uploaded yet is normal, and the screen renders nothing
+  // rather than a broken frame.
+  metadata?: { image_url?: string | null } | null;
 }
 
 // The chip rail on the Categories screen shows the admin-curated "category page" Category
