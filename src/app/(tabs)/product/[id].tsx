@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -124,7 +124,7 @@ export default function ProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { cart, loggedIn, addToCart, inc, dec, setQty, flash, bulkQtyThreshold } = useAppState();
+  const { cart, loggedIn, addToCart, inc, dec, setQty, flash, bulkQtyThreshold, supportPhone } = useAppState();
 
   // `id` is either a mock catalog numeric id (Buy again/Fast-moving/Listing still link that way)
   // or a real product's handle (every other screen's cards - see idHash.ts's productHref).
@@ -163,7 +163,11 @@ export default function ProductScreen() {
   // it's actually set as the cart line's quantity. `checking` disables the button mid-request
   // rather than letting a second tap race the first.
   const [bulkQtyInput, setBulkQtyInput] = useState('');
-  const [bulkQtyStatus, setBulkQtyStatus] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
+  // `showSupport` is set only when the request failed because there genuinely isn't enough stock -
+  // the one case where calling the team can actually get the customer what they asked for. The
+  // other errors here (unparseable quantity, missing variant, a failed stock lookup) are not
+  // things support can resolve, so offering a phone number there would just be noise.
+  const [bulkQtyStatus, setBulkQtyStatus] = useState<{ type: 'error' | 'success'; message: string; showSupport?: boolean } | null>(null);
   const [bulkQtyChecking, setBulkQtyChecking] = useState(false);
   // Sticky add-bar's own +/- stepper (for `active`, not a rail card - see incMain below).
   const [mainIncChecking, setMainIncChecking] = useState(false);
@@ -334,7 +338,10 @@ export default function ProductScreen() {
       } else {
         setBulkQtyStatus({
           type: 'error',
-          message: `Only ${stock.available ?? 0} in stock - enter a smaller quantity`,
+          // Ends mid-sentence on purpose - the support number is appended inline as a tappable
+          // span in the render below, so the phrasing has to lead into it.
+          message: `Only ${stock.available ?? 0} in stock - enter a smaller quantity, or arrange this quantity with us on`,
+          showSupport: true,
         });
       }
     } catch {
@@ -680,6 +687,23 @@ export default function ProductScreen() {
                   style={[styles.pincodeResultText, bulkQtyStatus.type === 'error' && styles.bulkQtyResultErrorText]}
                 >
                   {bulkQtyStatus.message}
+                  {/* Nested Text rather than a sibling Pressable so the number flows inline as the
+                      end of the sentence instead of dropping onto its own line, while staying
+                      tappable (onPress works on a nested Text in RN; a Pressable here would force a
+                      block-level break). Admin-configurable (Settings > App Config), the same value
+                      the order-confirmed screen shows, read from the app-config fetch
+                      AppStateContext already makes at startup - so changing it in admin changes it
+                      in both places. Tappable rather than plain text: a customer who has just been
+                      told to call shouldn't have to retype the number. */}
+                  {bulkQtyStatus.showSupport && (
+                    <Text
+                      style={styles.bulkQtySupportLink}
+                      onPress={() => Linking.openURL(`tel:${supportPhone.replace(/[\s-]/g, '')}`)}
+                    >
+                      {' '}
+                      {supportPhone}
+                    </Text>
+                  )}
                 </Text>
               </View>
             )}
@@ -1109,6 +1133,14 @@ const styles = StyleSheet.create({
   bulkQtySubtitle: { marginTop: 4, marginBottom: dsSpacing.md },
   bulkQtyResultError: { backgroundColor: ds.danger },
   bulkQtyResultErrorText: { color: ds.dangerInk },
+  // Inline continuation of the error message, so it inherits that block's size/line-height and only
+  // overrides weight and underline - enough to read as the tappable thing in an otherwise static
+  // panel. No margin: any box spacing here would break the inline flow it's nested into.
+  bulkQtySupportLink: {
+    fontFamily: dsFontFamily[700],
+    color: ds.dangerInk,
+    textDecorationLine: 'underline',
+  },
 
   tabsSection: { paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.xl },
   tabsRow: { flexDirection: 'row', gap: dsSpacing.lg, borderBottomWidth: 1, borderBottomColor: ds.line },
