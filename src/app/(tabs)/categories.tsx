@@ -220,12 +220,14 @@ export default function CategoriesScreen() {
           // browsing, instead of permanently costing every screen of the product grid its height.
           <>
             {!!categoryBannerUrl && (
-              <Image
-                source={{ uri: categoryBannerUrl }}
-                style={styles.categoryBanner}
-                contentFit="cover"
-                transition={150}
-              />
+              <View style={styles.categoryBannerCard}>
+                <Image
+                  source={{ uri: categoryBannerUrl }}
+                  style={styles.categoryBannerImage}
+                  contentFit="cover"
+                  transition={150}
+                />
+              </View>
             )}
             {hasActiveFilters ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillsRow} contentContainerStyle={styles.pillsRowContent}>
@@ -367,22 +369,32 @@ const styles = StyleSheet.create({
   skeletonGrid: { paddingHorizontal: dsSpacing.lg },
   body: { flex: 1 },
   bodyContent: { paddingTop: dsSpacing.md, paddingBottom: dsSpacing.xl },
+  // Same construction as Home's hero banner (index.tsx's heroImageCard/heroImage): a container that
+  // takes its HEIGHT FROM ITS WIDTH via aspectRatio, clipping a child image that fills it
+  // completely. A fixed pixel height was the earlier mistake - 140px bore no relation to the shape
+  // of the uploaded image, so cover had to crop it to fit, and the amount cropped changed with
+  // screen width. Deriving height from width means a banner authored at this ratio lands in the box
+  // exactly, on every device.
+  //
+  // 16:9 matches Home's banners, so one authoring size covers both. overflow:'hidden' is what
+  // actually rounds the corners - the radius lives on the container, not the image, since an image
+  // paints over its parent's corners otherwise. primarySoft shows through while loading and on
+  // failure, so the space never reads as a broken frame.
+  //
   // marginHorizontal, not width:'100%': the list's contentContainer (bodyContent) carries no
   // horizontal padding at all - every other row insets itself (gridRow, skeletonGrid,
   // pillsRowContent, emptyState all use paddingHorizontal: lg), so a full-width banner was the one
-  // element running edge to edge while the cards below sat inset. Matching lg here lines its edges
-  // up exactly with the product columns, and dsRadii.button matches the cards' own corner radius.
-  //
-  // Fixed height with cover: uploads differ in aspect ratio, and letting each one set its own
-  // height would make the grid jump as you switch chips. primarySoft shows through while the image
-  // loads and if it fails, so the space never reads as a broken frame.
-  categoryBanner: {
-    height: 140,
+  // element running edge to edge while the cards below sat inset. Matching lg lines its edges up
+  // exactly with the product columns, and dsRadii.button matches the cards' own corner radius.
+  categoryBannerCard: {
     marginHorizontal: dsSpacing.lg,
-    borderRadius: dsRadii.button,
-    backgroundColor: ds.primarySoft,
     marginBottom: dsSpacing.md,
+    aspectRatio: 16 / 9,
+    borderRadius: dsRadii.button,
+    overflow: 'hidden',
+    backgroundColor: ds.primarySoft,
   },
+  categoryBannerImage: { width: '100%', height: '100%' },
   pillsRow: { flexGrow: 0 },
   // No paddingTop here: bodyContent's own paddingTop already sits above this row (it's the
   // list header, inside the content container), so adding another one made the gap above the
