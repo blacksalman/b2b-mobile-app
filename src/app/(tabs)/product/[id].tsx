@@ -14,7 +14,6 @@ import {
   EasyReturnsIcon,
   GenuineCheckIcon,
   GstInvoiceIcon,
-  HeartIcon,
   PlayIcon,
   SmallBackChevronIcon,
   StarIcon,
@@ -153,7 +152,6 @@ export default function ProductScreen() {
     },
     [gallerySnap],
   );
-  const [wishlisted, setWishlisted] = useState(false);
   const [descOpen, setDescOpen] = useState(false);
   const [productTab, setProductTab] = useState<ProductTab>('Description');
   const [pincode, setPincode] = useState('');
@@ -480,9 +478,6 @@ export default function ProductScreen() {
               </Pressable>
             ))}
           </ScrollView>
-          <Pressable onPress={() => setWishlisted((v) => !v)} style={styles.wishlistButton} hitSlop={4}>
-            <HeartIcon size={16} color={ds.primaryInk} fill={wishlisted ? ds.primaryInk : 'none'} />
-          </Pressable>
         </View>
         <View style={styles.dotsRow}>
           {lightboxThumbs.map((i) => (
@@ -500,12 +495,19 @@ export default function ProductScreen() {
         <View style={styles.infoBlock}>
           <View style={styles.infoTopRow}>
             <Text style={styles.brand} numberOfLines={1}>{product.brand}</Text>
-            <Pressable onPress={goReviews} style={styles.ratingPill} hitSlop={4}>
-              <Text style={styles.ratingStar}>★</Text>
-              <Text style={styles.ratingValue}>{mainReviewSummary.average.toFixed(1)}</Text>
-              <Text style={styles.ratingCount}>({mainReviewSummary.count} reviews)</Text>
-              <ChevronRightIcon size={12} color={ds.ink2} strokeWidth={2.2} />
-            </Pressable>
+            {/* Hidden entirely with no reviews rather than showing "0.0 (0 reviews)" - a zero
+                average is not a rating, it reads as a bad one, and the chevron would lead to an
+                empty page. It appears as soon as the first review is approved. */}
+            {mainReviewSummary.count > 0 && (
+              <Pressable onPress={goReviews} style={styles.ratingPill} hitSlop={4}>
+                <Text style={styles.ratingStar}>★</Text>
+                <Text style={styles.ratingValue}>{mainReviewSummary.average.toFixed(1)}</Text>
+                <Text style={styles.ratingCount}>
+                  ({mainReviewSummary.count} {mainReviewSummary.count === 1 ? 'review' : 'reviews'})
+                </Text>
+                <ChevronRightIcon size={12} color={ds.ink2} strokeWidth={2.2} />
+              </Pressable>
+            )}
           </View>
           <Text style={styles.name}>{product.name}</Text>
           {outOfStock && (
@@ -1027,7 +1029,6 @@ const styles = StyleSheet.create({
   galleryContent: { flexDirection: 'row', gap: GALLERY_GAP, paddingHorizontal: GALLERY_SIDE },
   photo: { aspectRatio: 1, backgroundColor: ds.primarySoft, borderRadius: dsRadii.sheet, overflow: 'hidden' },
   photoImage: { width: '100%', height: '100%' },
-  wishlistButton: { position: 'absolute', top: 12, right: dsSpacing.lg, width: 36, height: 36, borderRadius: dsRadii.pill, backgroundColor: ds.surface, boxShadow: '0 1px 2px rgba(12,71,51,.12)', alignItems: 'center', justifyContent: 'center' },
   dotsRow: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: dsSpacing.md },
   dot: { width: 6, height: 6, borderRadius: dsRadii.pill },
   // Was a plain flex row capped at maxWidth:280 with each thumb flex:1 - fine for the 4 fake
