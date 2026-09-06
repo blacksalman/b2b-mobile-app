@@ -45,6 +45,12 @@ function isAuthScreen(pathname: string): boolean {
 }
 
 const PRODUCT_ADD_BAR_HEIGHT = 73;
+
+// Breathing room between the mini-cart pill and whatever it sits above. Without it the pill rests
+// flush on the tab bar (or on Product Detail's add bar) and reads as attached to it rather than as
+// something floating over the page.
+const FAB_GAP = 10;
+
 function isProductDetailScreen(pathname: string): boolean {
   return pathname.startsWith('/product/') && !pathname.endsWith('/reviews');
 }
@@ -62,12 +68,14 @@ export default function TabsLayout() {
 
   const hideTabBar = isAuthScreen(pathname);
   const showFab = cartTotals.cartHasItems && isMiniCartScreen(pathname);
-  const fabBottomOffset = tabBarHeight + (isProductDetailScreen(pathname) ? PRODUCT_ADD_BAR_HEIGHT : 0);
+  const fabBottomOffset = tabBarHeight + (isProductDetailScreen(pathname) ? PRODUCT_ADD_BAR_HEIGHT : 0) + FAB_GAP;
   // With no tab bar to clear, a toast sits on the safe-area inset instead of the (now stale)
   // last-measured bar height - otherwise it floats in mid-air above nothing on the auth screens.
   const toastBottomOffset = hideTabBar
     ? insets.bottom + dsSpacing.md
-    : tabBarHeight + (showFab ? fabHeight + 20 : 12);
+    // FAB_GAP is included here too: the toast stacks above the pill, so it has to move up by
+    // however far the pill did or it would sit on top of it.
+    : tabBarHeight + (showFab ? FAB_GAP + fabHeight + 20 : 12);
   const goCart = () => router.push('/cart');
 
   return (
