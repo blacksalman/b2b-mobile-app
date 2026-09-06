@@ -264,13 +264,15 @@ export default function CategoriesScreen() {
           // browsing, instead of permanently costing every screen of the product grid its height.
           <>
             {!!categoryBannerUrl && (
-              <View style={styles.categoryBannerCard}>
-                <Image
-                  source={{ uri: categoryBannerUrl }}
-                  style={styles.categoryBannerImage}
-                  contentFit="cover"
-                  transition={150}
-                />
+              <View style={styles.categoryBannerRow}>
+                <View style={styles.categoryBannerCard}>
+                  <Image
+                    source={{ uri: categoryBannerUrl }}
+                    style={styles.categoryBannerImage}
+                    contentFit="cover"
+                    transition={150}
+                  />
+                </View>
               </View>
             )}
             {hasActiveFilters ? (
@@ -425,14 +427,18 @@ const styles = StyleSheet.create({
   // paints over its parent's corners otherwise. primarySoft shows through while loading and on
   // failure, so the space never reads as a broken frame.
   //
-  // marginHorizontal, not width:'100%': the list's contentContainer (bodyContent) carries no
-  // horizontal padding at all - every other row insets itself (gridRow, skeletonGrid,
-  // pillsRowContent, emptyState all use paddingHorizontal: lg), so a full-width banner was the one
-  // element running edge to edge while the cards below sat inset. Matching lg lines its edges up
-  // exactly with the product columns, and dsRadii.button matches the cards' own corner radius.
+  // Insets exactly like gridRow - same paddingHorizontal on a wrapper, rather than a margin on the
+  // banner itself. The list's contentContainer (bodyContent) carries no horizontal padding at all;
+  // every row insets itself (gridRow, skeletonGrid, pillsRowContent, emptyState all use
+  // paddingHorizontal: lg), so using the same mechanism is what actually guarantees the banner's
+  // edges land on the product columns' edges rather than merely computing to the same number.
+  categoryBannerRow: { paddingHorizontal: dsSpacing.lg, marginBottom: dsSpacing.md },
+  // width is declared, not left to stretch: with width auto AND aspectRatio set, Yoga is free to
+  // satisfy the ratio by shrinking the width instead of deriving the height from it, which left
+  // the banner short of its right margin while the left sat flush. Declaring width makes the
+  // height the only thing aspectRatio can solve for. dsRadii.button matches the cards' own radius.
   categoryBannerCard: {
-    marginHorizontal: dsSpacing.lg,
-    marginBottom: dsSpacing.md,
+    width: '100%',
     aspectRatio: 16 / 9,
     borderRadius: dsRadii.button,
     overflow: 'hidden',
