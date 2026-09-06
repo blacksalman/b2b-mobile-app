@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsElevation } from '@/theme';
@@ -8,7 +8,7 @@ import { DsSectionHeader } from '@/components/ds/DsSectionHeader';
 import { DsProductCard } from '@/components/ds/DsProductCard';
 import { VariantSheet } from '@/components/shell/VariantSheet';
 import { Skeleton } from '@/components/primitives/Skeleton';
-import { MarginTrendIcon, DeliveryBoxIcon, ShieldCheckIcon, ChevronRightIcon, ConcernLeafIcon, CartIcon, TrashIcon } from '@/icons';
+import { MarginTrendIcon, DeliveryBoxIcon, ShieldCheckIcon, ChevronRightIcon, CartIcon, TrashIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import { useHomeApiData, useDoctorTalks, toRailProduct, type ApiCategoryTile, type ApiBrand } from '@/data/homeApi';
 import { useApiCartActions } from '@/data/useApiCartActions';
@@ -100,6 +100,16 @@ export default function HomeScreen() {
     [apiData.concernShelves, cart, loggedIn, reviewSummaries]
   );
 
+  // 80% of the screen, not a fixed pixel width: a hardcoded number is right on exactly one device
+  // and either overflows or leaves dead space on every other. The leftover 20% is what makes the
+  // next banner peek in at the edge, which is the cue that the rail scrolls at all.
+  //
+  // Measured against the window rather than declared as width: '80%' - inside a horizontal
+  // ScrollView a percentage resolves against the content container, which grows with its content,
+  // so it would not mean "80% of the screen". useWindowDimensions also re-renders on rotation.
+  const { width: windowWidth } = useWindowDimensions();
+  const bannerWidth = windowWidth * 0.8;
+
   const openProduct = (p: { id: number; handle?: string }) => router.push(productHref(p));
   // Every real rail on this screen (Best sellers/New arrivals/Featured/Fast-moving/Concern
   // shelves/Buy again) shares these - see useApiCartActions for the real-cart-sync behavior.
@@ -146,13 +156,13 @@ export default function HomeScreen() {
             not gated on any other section's data (see homeApi.ts's HomeApiData comment). */}
         {apiData.heroBannersLoading ? (
           <View style={styles.heroRail}>
-            <View style={[styles.heroImageCard, { backgroundColor: ds.line }]} />
+            <View style={[styles.heroImageCard, { width: bannerWidth, backgroundColor: ds.line }]} />
           </View>
         ) : (
           apiData.heroBanners.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroRail}>
               {apiData.heroBanners.map((b) => (
-                <Pressable key={b.id} onPress={goCategories} style={styles.heroImageCard}>
+                <Pressable key={b.id} onPress={goCategories} style={[styles.heroImageCard, { width: bannerWidth }]}>
                   <Image source={{ uri: b.image_url as string }} style={styles.heroImage} contentFit="cover" />
                 </Pressable>
               ))}
@@ -455,13 +465,13 @@ export default function HomeScreen() {
             empty-state behavior. */}
         {apiData.promoBannersLoading ? (
           <View style={styles.promoRail}>
-            <View style={[styles.promoCard, styles.promoImage, { backgroundColor: ds.line }]} />
+            <View style={[styles.promoCard, { width: bannerWidth, backgroundColor: ds.line }]} />
           </View>
         ) : (
           apiData.promoBanners.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.promoRail}>
               {apiData.promoBanners.map((pb) => (
-                <View key={pb.id as string} style={styles.promoCard}>
+                <View key={pb.id as string} style={[styles.promoCard, { width: bannerWidth }]}>
                   <Image source={{ uri: pb.image_url as string }} style={styles.promoImage} contentFit="cover" />
                 </View>
               ))}
@@ -517,9 +527,6 @@ export default function HomeScreen() {
               onPress={() => (c.categoryId ? openCategory(c.categoryId) : goCategories())}
               style={[styles.concernBanner, { backgroundColor: c.tint }]}
             >
-              <View style={styles.concernIcon}>
-                <ConcernLeafIcon size={19} />
-              </View>
               <View style={styles.concernText}>
                 <Text style={styles.concernTitle}>{c.title}</Text>
               </View>
@@ -723,7 +730,10 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: dsSpacing.xl },
 
   heroRail: { flexDirection: 'row', gap: dsSpacing.md, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
-  heroImageCard: { width: 302, aspectRatio: 16 / 9, borderRadius: dsRadii.sheet, overflow: 'hidden', backgroundColor: ds.primarySoft },
+  // No width here - it's set per-render from the window (see bannerWidth). aspectRatio then
+  // derives the height from whatever that works out to, so the banner scales on both axes together
+  // and the artwork keeps its proportions on every screen size.
+  heroImageCard: { aspectRatio: 16 / 9, borderRadius: dsRadii.sheet, overflow: 'hidden', backgroundColor: ds.primarySoft },
   heroImage: { width: '100%', height: '100%' },
 
   marginBanner: {
@@ -855,9 +865,13 @@ const styles = StyleSheet.create({
   brandLine: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2 },
   brandSkus: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 20, color: ds.primaryInk, marginTop: 4 },
 
-  promoRail: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.sm, paddingTop: dsSpacing.lg },
-  promoCard: { width: 272, borderRadius: dsRadii.sheet, overflow: 'hidden' },
-  promoImage: { width: '100%', aspectRatio: 16 / 9 },
+  // Deliberately identical to heroRail/heroImageCard/heroImage above - same gap, same insets, same
+  // radius, same placeholder tint, same width from bannerWidth with the height derived by the 16/9.
+  // These are the same component in two places on one screen, so any difference between them reads
+  // as a mistake rather than as intent. Keep them in step if either changes.
+  promoRail: { flexDirection: 'row', gap: dsSpacing.md, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
+  promoCard: { aspectRatio: 16 / 9, borderRadius: dsRadii.sheet, overflow: 'hidden', backgroundColor: ds.primarySoft },
+  promoImage: { width: '100%', height: '100%' },
 
   concernBanner: {
     marginHorizontal: dsSpacing.lg,
@@ -869,7 +883,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: dsSpacing.md,
   },
-  concernIcon: { width: 38, height: 38, borderRadius: dsRadii.button, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },
   concernText: { flex: 1, minWidth: 0 },
   concernTitle: { fontFamily: dsFontFamily[600], fontSize: 16, lineHeight: 22, letterSpacing: -0.16, color: ds.ink },
   concernBlurb: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink2, marginTop: 4 },
