@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { fetchOrders, fetchOrder, fetchProductsByIds, type MedusaOrder, type MedusaProduct } from '@/lib/medusaClient';
+import {
+  fetchOrders,
+  fetchOrder,
+  fetchProductsByIds,
+  type MedusaOrder,
+  type MedusaOrderLineItem,
+  type MedusaProduct,
+} from '@/lib/medusaClient';
 import { isProductInStock } from './homeApi';
 
 // Real "Buy again" data source (GET /store/orders, auto-scoped to the logged-in customer via the
@@ -213,4 +220,19 @@ export function useOrder(orderId: string | null): OrderDetailData {
   }, [orderId]);
 
   return state;
+}
+
+// What this line actually cost the customer, tax included.
+//
+// order_line_item.unit_price is stored pre-tax (is_tax_inclusive is false on every line this
+// backend writes), so rendering it raw made Order Details the only customer-facing screen in the
+// app showing a pre-tax number: the same line reads as its tax-inclusive line total on Home,
+// Category, Product, Cart and Checkout, then dropped to a smaller pre-tax per-unit figure once the
+// order existed. It also never reconciled with the order total shown directly above it.
+//
+// The rate comes from the order's own tax_lines rather than the product's current GST rate, so an
+// order placed before a rate change keeps showing what was really paid.
+export function orderLineTotalWithTax(item: MedusaOrderLineItem): number {
+  const rate = (item.tax_lines ?? []).reduce((sum, t) => sum + (t.rate ?? 0), 0);
+  return item.unit_price * item.quantity * (1 + rate / 100);
 }

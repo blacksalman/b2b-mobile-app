@@ -478,7 +478,13 @@ export interface MedusaOrderLineItem {
   product_title: string;
   thumbnail: string | null;
   quantity: number;
+  // Pre-tax, per unit - is_tax_inclusive is false on every line this backend writes. Use
+  // orderLineTotalWithTax() (ordersApi.ts) for anything customer-facing.
   unit_price: number;
+  // Real order_line_item_tax_line rows, so this is the rate actually charged on this line at order
+  // time rather than the product's current rate - an order placed under a different GST rate keeps
+  // showing what was really paid. Usually one line; summed in case of split rates.
+  tax_lines?: { rate: number }[];
 }
 
 export interface MedusaOrderAddress {
@@ -552,6 +558,11 @@ const ORDER_FIELDS = [
   'items.thumbnail',
   'items.detail.quantity',
   'items.unit_price',
+  // Deliberately the tax_lines relation rather than the computed `items.total`/`items.tax_total`:
+  // computed fields are the ones that silently drop out of query.graph responses (same class of
+  // problem as items.quantity above), whereas tax_lines are real rows and resolve like any other
+  // relation.
+  'items.tax_lines.rate',
   'shipping_address.first_name',
   'shipping_address.last_name',
   'shipping_address.address_1',

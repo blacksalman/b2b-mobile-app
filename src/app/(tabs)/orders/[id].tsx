@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsElevation, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { LocationPinIcon, OrderBoxIcon, ShoppingBagIcon, SmallBackChevronIcon } from '@/icons';
-import { useOrder, orderStatusFor, orderItemCount, orderDispatchDate, orderDeliveryDate, orderDeliveryEstimate, ORDER_STATUS_STYLE } from '@/data/ordersApi';
+import { useOrder, orderStatusFor, orderItemCount, orderDispatchDate, orderDeliveryDate, orderDeliveryEstimate, orderLineTotalWithTax, ORDER_STATUS_STYLE } from '@/data/ordersApi';
 import { money } from '@/utils/money';
 
 function formatDate(iso: string | null): string {
@@ -148,7 +148,11 @@ export default function OrderDetailScreen() {
                   <Text style={styles.itemName} numberOfLines={2}>{it.product_title}</Text>
                   <View style={styles.itemAmounts}>
                     <Text style={styles.itemQty}>Qty: {it.quantity}</Text>
-                    <Text style={styles.itemPrice}>{money(it.unit_price)}</Text>
+                    {/* Tax-inclusive LINE total, matching what Cart and Checkout showed for this
+                        same line before the order existed - not the pre-tax per-unit price the
+                        order stores, which read as a different (smaller) number for the same
+                        purchase and never added up to the Total Price above. */}
+                    <Text style={styles.itemPrice}>{money(orderLineTotalWithTax(it))}</Text>
                   </View>
                 </View>
               ))}
