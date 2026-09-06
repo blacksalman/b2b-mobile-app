@@ -31,6 +31,11 @@ import { money } from '@/utils/money';
 export interface RealCartLine {
   id: string;
   productId: string;
+  // The product's URL handle, so a cart row can link back to the product it holds. Optional
+  // because it comes from the separately-hydrated product, so it's absent for the moment before
+  // that resolves - treat a missing handle as "not linkable yet" rather than falling back to an id
+  // the product route can't resolve.
+  handle?: string;
   name: string;
   brand: string;
   cs: string;
@@ -132,6 +137,7 @@ export function buildLine(item: MedusaCartLineItem, product: MedusaProduct | und
   return {
     id: item.id,
     productId: item.product_id,
+    handle: product?.handle,
     name: item.product_title,
     brand: item.product_collection ?? '',
     cs: item.variant_title,

@@ -15,6 +15,10 @@ interface CartLineCardProps {
   // of Cart hiding its whole line list behind a full-page loader for the mutation's duration.
   // Optional and unused by MiniCartSheet, which doesn't drive real cart mutations from its rows.
   busy?: boolean;
+  // Opens the product this line holds. Optional: MiniCartSheet doesn't navigate from its rows,
+  // and a line whose product hasn't hydrated yet has no handle to open, so the row simply isn't
+  // pressable in either case.
+  onOpen?: () => void;
 }
 
 // Rebuilt against the new AyurvedaOne design system (screen_Cart.html, byte-for-byte identical
@@ -32,28 +36,39 @@ interface CartLineCardProps {
 // its OWN real discount%, rather than only a blended average across every line in the cart
 // (which the Order summary's Total row used to show and doesn't correspond to any single
 // product).
-export const CartLineCard = React.memo(function CartLineCard({ line, onInc, onDec, onRemove, busy }: CartLineCardProps) {
+export const CartLineCard = React.memo(function CartLineCard({ line, onInc, onDec, onRemove, busy, onOpen }: CartLineCardProps) {
   const atOne = line.qty <= 1;
   return (
     <View style={styles.card}>
       <View style={styles.row}>
-        <View style={[styles.swatch, { backgroundColor: line.tint }]}>
-          {line.thumbnail && <Image source={{ uri: line.thumbnail }} style={styles.thumbImage} contentFit="contain" />}
-        </View>
-        <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={2}>{line.name}</Text>
-          <Text style={styles.brand} numberOfLines={1}>{line.brandUpper}</Text>
-          <View style={styles.priceRow}>
-            <Text style={styles.priceEach}>{line.priceEach}</Text>
-            {line.hasOffer && <Text style={styles.mrpEach}>{line.mrpEach}</Text>}
-            {line.hasOffer && !!line.discount && (
-              <View style={styles.discountChip}>
-                <Text style={styles.discountChipText}>{line.discount}</Text>
-              </View>
-            )}
+        {/* Photo and details open the product; the remove button stays outside this so a tap meant
+            for the bin can't be swallowed by the link. Rendered as a Pressable only when onOpen is
+            given - MiniCartSheet passes nothing, so its rows stay inert exactly as before, and a
+            cart line whose product hasn't hydrated yet has no handle to link to. */}
+        <Pressable
+          onPress={onOpen}
+          disabled={!onOpen}
+          android_ripple={onOpen ? { color: ds.line } : undefined}
+          style={styles.openTarget}
+        >
+          <View style={[styles.swatch, { backgroundColor: line.tint }]}>
+            {line.thumbnail && <Image source={{ uri: line.thumbnail }} style={styles.thumbImage} contentFit="contain" />}
           </View>
-          <Text style={styles.forEach}>for each</Text>
-        </View>
+          <View style={styles.info}>
+            <Text style={styles.name} numberOfLines={2}>{line.name}</Text>
+            <Text style={styles.brand} numberOfLines={1}>{line.brandUpper}</Text>
+            <View style={styles.priceRow}>
+              <Text style={styles.priceEach}>{line.priceEach}</Text>
+              {line.hasOffer && <Text style={styles.mrpEach}>{line.mrpEach}</Text>}
+              {line.hasOffer && !!line.discount && (
+                <View style={styles.discountChip}>
+                  <Text style={styles.discountChipText}>{line.discount}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.forEach}>for each</Text>
+          </View>
+        </Pressable>
         <Pressable onPress={onRemove} style={styles.removeButton} hitSlop={6} disabled={busy}>
           <TrashIcon size={18} color={ds.dangerInk} />
         </Pressable>
@@ -92,6 +107,10 @@ const styles = StyleSheet.create({
     ...dsElevation.e1,
   },
   row: { flexDirection: 'row', gap: dsSpacing.md },
+  // Reproduces what the swatch and info used to get from `row` directly, so wrapping them in a
+  // Pressable changes nothing about the layout - same direction, same gap, and flex: 1 so the
+  // remove button keeps its place at the end.
+  openTarget: { flex: 1, minWidth: 0, flexDirection: 'row', gap: dsSpacing.md },
   swatch: { width: 72, height: 72, borderRadius: dsRadii.input, flexShrink: 0, overflow: 'hidden' },
   thumbImage: { width: '100%', height: '100%' },
   info: { flex: 1, minWidth: 0 },

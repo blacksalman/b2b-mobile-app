@@ -126,6 +126,9 @@ export default function CartScreen() {
                 onDec={() => lineDec(line)}
                 onRemove={() => lineRemove(line)}
                 busy={mutatingLineIds.has(line.id)}
+                // Only linkable once the product has hydrated and supplied its handle: the product
+                // route resolves by handle, so linking on the hashed numeric id would open nothing.
+                onOpen={line.handle ? () => router.push(`/product/${line.handle}`) : undefined}
               />
             ))}
           </View>
