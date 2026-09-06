@@ -499,12 +499,16 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* Concern shelves - backed by every remaining product-section (anything that isn't
-            best-sellers/new-arrivals/featured-product/buy-again/fast-moving-offer) */}
+        {/* Concern shelves - one per category in the "home-shelves" Category Section, in the order
+            an admin arranged them there. Tapping the banner opens Categories already filtered to
+            that category rather than the full catalogue, which is the whole point of sourcing these
+            from categories. Falls back to the old product-section shelves when that section hasn't
+            been set up (see homeApi.ts's HOME_SHELVES_SLUG); those have no category behind them, so
+            they keep opening Categories unfiltered. */}
         {concerns.map((c) => (
           <View key={c.slug}>
             <Pressable
-              onPress={goCategories}
+              onPress={() => (c.categoryId ? openCategory(c.categoryId) : goCategories())}
               style={[styles.concernBanner, { backgroundColor: c.tint }]}
             >
               <View style={styles.concernIcon}>
@@ -836,7 +840,7 @@ const styles = StyleSheet.create({
   brandCard: { flex: 1, minWidth: 0, backgroundColor: ds.surface, borderWidth: 1, borderColor: ds.line, borderRadius: dsRadii.button, overflow: 'hidden', ...dsElevation.e1 },
   brandSkeletonCard: { flex: 1, minWidth: 0, height: 168, borderRadius: dsRadii.button },
   brandImage: { aspectRatio: 4 / 3, backgroundColor: ds.primarySoft, justifyContent: 'flex-end', padding: 8 },
-  brandRealImage: { ...StyleSheet.absoluteFillObject },
+  brandRealImage: { ...StyleSheet.absoluteFill },
   brandImageLabel: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: ds.ink3 },
   brandInitials: { position: 'absolute', top: 8, left: 8, width: 32, height: 32, borderRadius: dsRadii.input, backgroundColor: ds.surface, alignItems: 'center', justifyContent: 'center' },
   brandInitialsText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22, color: ds.primaryInk },

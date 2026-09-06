@@ -37,12 +37,37 @@ export { hashProductId };
 // content comes from order history, not this admin-curated mechanism).
 const EXCLUDED_SLUGS = new Set(['buy-again']);
 
+// The Category Section (admin > Category Sections) that drives Home's concern shelves. Each
+// category in it becomes one shelf, IN THE ORDER THE ADMIN ARRANGED THEM - the store route
+// resolves category_ids back in array order, so position in that list is the shelf's priority.
+// The shelf's heading is the category's own name and its products are that category's products,
+// so there's no separate product curation to keep in sync any more.
+//
+// This deliberately does NOT cover Best Sellers / Featured / Fast Moving / Buy Again - those stay
+// hand-picked product sections, because "the 8 products we want to push this week" isn't something
+// a category can express.
+//
+// Until an admin creates this section, it resolves to nothing and Home falls back to the old
+// product-section shelves, so shipping this build can't leave Home with a hole in it.
+const HOME_SHELVES_SLUG = 'home-shelves';
+
+// How many products each category shelf shows. The rail is horizontally scrolled, so this is about
+// how far it's worth scrolling, not what fits - 10 matches the other rails' feel without pulling a
+// whole category (some have thousands).
+const SHELF_PRODUCT_LIMIT = 10;
+
 export interface ApiConcernShelf {
   slug: string;
   title: string;
   blurb: string;
   tint: string;
   rawProducts: MedusaProduct[];
+  // The real category this shelf represents, when it came from the "home-shelves" Category Section
+  // (see HOME_SHELVES_SLUG below). Home's banner uses it to open Categories pre-selected to that
+  // category instead of dumping the user on "All". Null for the legacy product-section fallback,
+  // where a shelf is a hand-picked product list with no category behind it - those keep today's
+  // behaviour of opening Categories unfiltered, because there's genuinely nothing to select.
+  categoryId: string | null;
 }
 
 export interface ApiCategoryTile {
@@ -250,6 +275,65 @@ export function useHomeApiData(): HomeApiData {
       })
       .catch(() => patch({ catalogCountsLoading: false, error: true }));
 
+    // Resolved ONCE and awaited by both consumers below, so there's no race over who gets to set
+    // concernShelves: the category path fills them when the section is configured, and the legacy
+    // product-section path only fills them when it isn't. Both read this same promise, so the
+    // answer is identical whichever settles first. A missing section or a failed request both come
+    // back as [] - i.e. "not configured", fall back - rather than blanking the shelves.
+    const homeShelfCategories = fetchCategorySections(HOME_SHELVES_SLUG)
+      .then((res) => res.category_sections[0]?.categories ?? [])
+      .catch(() => []);
+
+    homeShelfCategories
+      .then(async (categories) => {
+        if (!categories.length) return;
+
+        // Each category's products are fetched independently and in parallel. allSettled, not all:
+        // one category failing (or being empty) drops just that shelf instead of taking down every
+        // other shelf with it.
+        const shelves = await Promise.allSettled(
+          categories.map(async (cat, i): Promise<ApiConcernShelf | null> => {
+            // Hand-picked products win when an admin chose them, in exactly the order they were
+            // arranged. Otherwise fall back to the category's own products, so a category added to
+            // the section but not yet curated still renders a real shelf instead of an empty one.
+            //
+            // The picked path deliberately does NOT force inStock: an admin who explicitly chose a
+            // product should see it on the shelf, the same reasoning the search path uses for not
+            // hiding out-of-stock matches. The browse fallback does force it, since nobody chose
+            // those and a dead tap is all an out-of-stock auto-pick would produce.
+            const picked = cat.product_ids ?? [];
+            const ids = picked.length
+              ? picked
+              : (
+                  await searchProducts({
+                    categoryId: cat.id,
+                    inStock: true,
+                    limit: SHELF_PRODUCT_LIMIT,
+                  })
+                ).ids;
+            if (!ids.length) return null;
+            const hydrated = await fetchProductsByIds(ids);
+            const rawProducts = orderHydrated(ids.map((id) => ({ id })), hydrated);
+            if (!rawProducts.length) return null;
+            return {
+              slug: cat.handle,
+              title: cat.name,
+              blurb: 'Curated products for this shelf',
+              tint: CONCERN_TINTS[i % CONCERN_TINTS.length],
+              rawProducts,
+              categoryId: cat.id,
+            };
+          })
+        );
+
+        const concernShelves = shelves
+          .map((r) => (r.status === 'fulfilled' ? r.value : null))
+          .filter((s): s is ApiConcernShelf => s !== null);
+
+        patch({ concernShelves, concernShelvesLoading: false });
+      })
+      .catch(() => patch({ concernShelvesLoading: false, error: true }));
+
     fetchProductSections()
       .then((sectionsRes) => {
         const sections = sectionsRes.product_sections.filter((s) => !EXCLUDED_SLUGS.has(s.slug));
@@ -293,23 +377,31 @@ export function useHomeApiData(): HomeApiData {
           patch({ fastMoving: [], fastMovingLoading: false });
         }
 
-        if (concernSections.length) {
-          const concernIds = [...new Set(concernSections.flatMap((s) => s.products.map((p) => p.id)))];
-          fetchProductsByIds(concernIds)
-            .then((hydrated) => {
-              const concernShelves: ApiConcernShelf[] = concernSections.map((s, i) => ({
-                slug: s.slug,
-                title: s.title,
-                blurb: 'Curated products for this shelf',
-                tint: CONCERN_TINTS[i % CONCERN_TINTS.length],
-                rawProducts: orderHydrated(s.products, hydrated),
-              }));
-              patch({ concernShelves, concernShelvesLoading: false });
-            })
-            .catch(() => patch({ concernShelvesLoading: false, error: true }));
-        } else {
-          patch({ concernShelves: [], concernShelvesLoading: false });
-        }
+        // Fallback only. Once the "home-shelves" Category Section exists, that owns the shelves and
+        // this path stays out of the way entirely - otherwise the same shelf would render twice,
+        // once per source.
+        homeShelfCategories.then((homeShelfCats) => {
+          if (homeShelfCats.length) return;
+
+          if (concernSections.length) {
+            const concernIds = [...new Set(concernSections.flatMap((s) => s.products.map((p) => p.id)))];
+            fetchProductsByIds(concernIds)
+              .then((hydrated) => {
+                const concernShelves: ApiConcernShelf[] = concernSections.map((s, i) => ({
+                  slug: s.slug,
+                  title: s.title,
+                  blurb: 'Curated products for this shelf',
+                  tint: CONCERN_TINTS[i % CONCERN_TINTS.length],
+                  rawProducts: orderHydrated(s.products, hydrated),
+                  categoryId: null,
+                }));
+                patch({ concernShelves, concernShelvesLoading: false });
+              })
+              .catch(() => patch({ concernShelvesLoading: false, error: true }));
+          } else {
+            patch({ concernShelves: [], concernShelvesLoading: false });
+          }
+        });
       })
       .catch(() =>
         patch({

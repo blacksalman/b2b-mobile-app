@@ -98,7 +98,16 @@ export interface MedusaCategorySection {
   slug: string;
   title: string;
   rank: number;
-  categories: { id: string; name: string; handle: string; metadata?: { image_url?: string | null } | null }[];
+  categories: {
+    id: string;
+    name: string;
+    handle: string;
+    metadata?: { image_url?: string | null } | null;
+    // Products hand-picked for this category in this section (admin > Category Sections > Pick
+    // products), in the order chosen. Empty means nothing was picked, and the caller should fall
+    // back to the category's own products rather than render an empty shelf.
+    product_ids?: string[];
+  }[];
 }
 
 export function fetchCategorySections(slug?: string): Promise<{ category_sections: MedusaCategorySection[] }> {
