@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +18,10 @@ import { useApiCartActions } from '@/data/useApiCartActions';
 import { productHref } from '@/data/idHash';
 import { useReviewSummaries } from '@/data/reviewsApi';
 import type { Product } from '@/data/types';
+
+// The hero's full height. Lives here rather than in styles.hero because the height is animated,
+// so it has to be a value the animation can target - two sources for it would drift.
+const HERO_HEIGHT = 220;
 
 function addFlashLabel(name: string): string {
   return name.split(' ').slice(0, 2).join(' ') + ' added';
@@ -114,6 +118,52 @@ export default function ListingScreen() {
   const goLogin = () => router.push('/account');
   const goBack = () => router.back();
 
+  // While you're searching, the hero collapses to nothing so the search block sits at the top and
+  // stays there.
+  //
+  // Scrolling the hero out of view isn't enough on its own: typing refetches, which empties the
+  // list mid-keystroke, and a ScrollView cannot hold an offset past content it no longer has - so
+  // it clamps back to the top and the hero slides into view again on the first character typed.
+  // Removing the hero's height instead means there is nothing to scroll past, whatever the results
+  // do.
+  //
+  // "Searching" lasts until the box is actually empty again, not just until focus is lost, so
+  // dismissing the keyboard to look at results doesn't bring the hero back mid-search.
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searching = searchFocused || query.trim().length > 0;
+
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollY = useRef(0);
+  const offsetBeforeSearch = useRef<number | null>(null);
+  // Animated rather than a plain style swap: collapsing 220px to 0 in a single frame reads as a
+  // jolt, and the content below jumps with it. useNativeDriver has to be false - height is a
+  // layout property, which the native driver cannot animate - but it's one view for a third of a
+  // second, not a per-frame cost.
+  const heroHeightAnim = useRef(new Animated.Value(HERO_HEIGHT)).current;
+
+  useEffect(() => {
+    Animated.timing(heroHeightAnim, {
+      toValue: searching ? 0 : HERO_HEIGHT,
+      duration: 300,
+      // Decelerating rather than linear, so it settles instead of stopping dead.
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [searching, heroHeightAnim]);
+
+  useEffect(() => {
+    if (searching) {
+      // Remember where they were only on the way in, so repeated re-renders while typing don't
+      // overwrite it with the scrolled-to-top position.
+      if (offsetBeforeSearch.current === null) offsetBeforeSearch.current = scrollY.current;
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    } else {
+      const restoreTo = offsetBeforeSearch.current;
+      offsetBeforeSearch.current = null;
+      if (restoreTo !== null) scrollRef.current?.scrollTo({ y: restoreTo, animated: true });
+    }
+  }, [searching]);
+
   // paddingTop below keeps the scroll content out from under the status bar. The hero used to run
   // full-bleed to the very top, which meant the sticky block pinned underneath the clock - and a
   // sticky element can't grow only while pinned, so no amount of padding on the block itself could
@@ -128,8 +178,20 @@ export default function ListingScreen() {
           outside its list; that isn't available here without displacing the hero, which is this
           screen's whole identity, so it sticks in place instead. The index is safe: the hero and
           that block are the first two children and neither is conditional. */}
-      <ScrollView contentContainerStyle={styles.scrollContent} stickyHeaderIndices={[1]}>
-        <View style={[styles.hero, { backgroundColor: tint }]}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scrollContent}
+        stickyHeaderIndices={[1]}
+        onScroll={(e) => {
+          scrollY.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Kept mounted and animated to zero height rather than unmounted while searching:
+            dropping it would shift every following child up one, and stickyHeaderIndices below is
+            an index. */}
+        <Animated.View style={[styles.hero, { backgroundColor: tint, height: heroHeightAnim }]}>
           {heroImage && <Image source={{ uri: heroImage }} style={styles.heroImage} contentFit="cover" />}
           {/* Plain 12 now, not insets.top + 12: the screen itself carries the status-bar inset, so
               the hero starts below it and this offset is measured from the hero's own top edge. */}
@@ -140,7 +202,7 @@ export default function ListingScreen() {
             <Text style={styles.heroTitle}>{title}</Text>
             <Text style={styles.heroTagline}>{tagline}</Text>
           </LinearGradient>
-        </View>
+        </Animated.View>
 
         {/* Search, filter and the product count pin together as one block, so while you scroll the
             grid you can still search, filter, and see how many products you're looking at. They have
@@ -155,6 +217,8 @@ export default function ListingScreen() {
                 placeholder={`Search in ${title}…`}
                 placeholderTextColor={ds.ink2}
                 style={styles.input}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
               />
               {/* Same clear affordance Categories' search already has - without it, emptying a
                   search here meant holding backspace through the whole term. */}
@@ -241,7 +305,9 @@ export default function ListingScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: ds.canvas },
   scrollContent: { paddingBottom: dsSpacing.xl },
-  hero: { height: 220, position: 'relative', justifyContent: 'flex-end', overflow: 'hidden' },
+  // No height here - it's animated (see heroHeightAnim). overflow: 'hidden' is what lets the
+  // height shrink to zero without the image and title spilling over the search block.
+  hero: { position: 'relative', justifyContent: 'flex-end', overflow: 'hidden' },
   heroImage: { ...StyleSheet.absoluteFill },
   backButton: {
     position: 'absolute',
