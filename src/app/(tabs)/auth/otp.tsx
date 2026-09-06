@@ -38,6 +38,12 @@ export default function AuthOtpScreen() {
   const { phone, next } = useLocalSearchParams<{ phone?: string; next?: string }>();
   const [otp, setOtp] = useState(['', '', '', '']);
   const [verifying, setVerifying] = useState(false);
+  // Shown inline under the boxes rather than relying on flash(). The toast renders inside the tab
+  // bar's wrapper, which collapses to zero height on the auth screens (the tab bar is hidden
+  // there), so on Android the absolutely-positioned toast is clipped - a wrong code cleared the
+  // boxes with no visible explanation at all. Inline is also simply where a form error belongs:
+  // next to the field it's about, and it stays put instead of timing out.
+  const [error, setError] = useState<string | null>(null);
 
   // This screen is never unmounted (see phone.tsx's matching note), and the success path pushed to
   // /account without clearing the digits - only the failure and resend paths did. So the code from
@@ -52,6 +58,8 @@ export default function AuthOtpScreen() {
 
   const goAuthPhone = () => router.push('/auth/phone');
   const onDigitChange = (i: number, v: string) => {
+    // Typing is the customer correcting the code - a stale error shouldn't sit there while they do.
+    setError(null);
     const d = v.replace(/\D/g, '').slice(-1);
     setOtp((cur) => {
       const next = [...cur];
@@ -64,6 +72,7 @@ export default function AuthOtpScreen() {
     if (!phone || verifying) return;
     const code = otp.join('');
     if (code.length < 4) return;
+    setError(null);
     setVerifying(true);
     try {
       const { isNewUser } = await verifyOtp(toE164(phone), code);
@@ -74,6 +83,7 @@ export default function AuthOtpScreen() {
       }
       const customer = await fetchCurrentCustomer();
       if (!customer) {
+        setError('Something went wrong - please try again.');
         flash('Something went wrong - please try again.');
         return;
       }
@@ -81,6 +91,9 @@ export default function AuthOtpScreen() {
       flash(`Welcome back${customer.first_name ? ', ' + customer.first_name : ''}`);
       router.push(afterLoginTarget(next));
     } catch {
+      // Both: the inline message is the one that's reliably visible here, flash stays for parity
+      // with the rest of the app in case the toast is showing.
+      setError('Incorrect or expired code. Please try again.');
       flash('Incorrect or expired code. Please try again.');
       setOtp(['', '', '', '']);
       inputRefs.current[0]?.focus();
@@ -89,6 +102,7 @@ export default function AuthOtpScreen() {
     }
   };
   const resendOtp = async () => {
+    setError(null);
     setOtp(['', '', '', '']);
     inputRefs.current[0]?.focus();
     if (!phone) return;
@@ -148,6 +162,8 @@ export default function AuthOtpScreen() {
             ))}
           </View>
 
+          {!!error && <Text style={styles.errorText}>{error}</Text>}
+
           <Pressable onPress={submitOtp} disabled={verifying} style={[styles.ctaButton, verifying && styles.ctaButtonDisabled]}>
             {verifying ? (
               <ActivityIndicator color={ds.surface} />
@@ -201,6 +217,16 @@ const styles = StyleSheet.create({
   phoneText: { fontFamily: dsFontFamily[600], fontSize: 14, lineHeight: 21, color: ds.primaryInk },
 
   otpRow: { flexDirection: 'row', justifyContent: 'center', gap: dsSpacing.md, marginTop: dsSpacing.lg },
+  // Centred under the boxes, above the Verify button, so it sits between what went wrong and the
+  // control you'd press to try again.
+  errorText: {
+    fontFamily: dsFontFamily[600],
+    fontSize: 13,
+    lineHeight: 18,
+    color: ds.dangerInk,
+    textAlign: 'center',
+    marginTop: dsSpacing.md,
+  },
   otpBox: {
     width: 48,
     height: 48,
