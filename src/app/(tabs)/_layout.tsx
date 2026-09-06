@@ -27,7 +27,15 @@ import { dsSpacing } from '@/theme';
 // `['home','categories','listing','category','product'].includes(S)` — 'category' has no RN
 // equivalent since Category/Brand were merged into Listing in an earlier sync, so it's dropped here.
 function isMiniCartScreen(pathname: string): boolean {
-  return pathname === '/' || pathname === '/categories' || pathname === '/listing' || pathname.startsWith('/product/');
+  return (
+    pathname === '/' ||
+    pathname === '/categories' ||
+    pathname === '/listing' ||
+    // Product Detail yes, its Reviews sub-route no: startsWith('/product/') matched both, so the
+    // pill floated over a screen that is about reading reviews, not shopping. Same exclusion
+    // isProductDetailScreen already makes for the add-to-cart bar's height.
+    (pathname.startsWith('/product/') && !pathname.endsWith('/reviews'))
+  );
 }
 
 // The Product Detail screen (not its Reviews sub-route) renders its own screen-local sticky
