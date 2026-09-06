@@ -9,7 +9,6 @@ import { DsProductCard } from '@/components/ds/DsProductCard';
 import { ProductGridSkeleton } from '@/components/ds/ProductGridSkeleton';
 import { FilterSheet } from '@/components/shell/FilterSheet';
 import { VariantSheet } from '@/components/shell/VariantSheet';
-import { countNonSortFilters } from '@/data/categories-content';
 import { RotatingSearchPlaceholder } from '@/components/shell/RotatingSearchPlaceholder';
 import { useAppState } from '@/state/AppStateContext';
 import { useProductCategories, useCategoryProducts, useCollections, useProductFacets } from '@/data/categoriesApi';
@@ -143,11 +142,6 @@ export default function CategoriesScreen() {
   // banner there would be labelling results that aren't scoped to that category. A category with
   // no image uploaded renders nothing at all, rather than an empty placeholder frame.
   const categoryBannerUrl = !hasQuery ? selectedCategory?.metadata?.image_url ?? null : null;
-  // Ported verbatim (source line 2960/2966/2972/2983): this count deliberately excludes `sort`,
-  // unlike `hasActiveFilters` (used for the pills row above), which does include it. Still shown
-  // on the filter badge even though filters don't affect the real grid right now (see the
-  // file-level note) - it's just reflecting what's selected, same as the pills row.
-  const nonSortFilterCount = countNonSortFilters(filters);
   const catEmpty = !productsState.loading && !productsState.error && catProducts.length === 0;
 
   const catEmptyTitle = productsState.error
@@ -182,11 +176,6 @@ export default function CategoriesScreen() {
           </Text>
           <Pressable onPress={() => setFilterOpen(true)} style={styles.roundButton} hitSlop={4}>
             <FilterIcon size={16} color={ds.ink} />
-            {hasActiveFilters && (
-              <View style={styles.filterBadge}>
-                <Text style={styles.filterBadgeText}>{nonSortFilterCount}</Text>
-              </View>
-            )}
           </Pressable>
         </View>
 
@@ -375,19 +364,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  filterBadge: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    minWidth: 18,
-    height: 18,
-    borderRadius: dsRadii.pill,
-    backgroundColor: ds.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  filterBadgeText: { fontFamily: dsFontFamily[600], fontSize: 11, lineHeight: 14, letterSpacing: 0.22, color: ds.surface },
   heading: { flex: 1, minWidth: 0, ...dsType.h2 },
   searchRow: { paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.md },
   searchInput: {
