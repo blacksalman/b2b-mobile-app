@@ -340,7 +340,7 @@ export default function ProductScreen() {
           type: 'error',
           // Ends mid-sentence on purpose - the support number is appended inline as a tappable
           // span in the render below, so the phrasing has to lead into it.
-          message: `Only ${stock.available ?? 0} in stock - enter a smaller quantity, or arrange this quantity with us on`,
+          message: `Only ${stock.available ?? 0} items left in stock. Reduce the quantity or contact us at`,
           showSupport: true,
         });
       }
