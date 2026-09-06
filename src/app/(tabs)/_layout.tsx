@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
-import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { Keyboard, LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TabBar } from '@/components/shell/TabBar';
 import { Toast } from '@/components/shell/Toast';
@@ -71,19 +71,41 @@ export default function TabsLayout() {
   const [tabBarHeight, setTabBarHeight] = useState(80);
   const [fabHeight, setFabHeight] = useState(0);
 
+  // Tracked here rather than per-screen because the Toast lives here, in the tab bar slot, and is
+  // the thing that has to get out of the keyboard's way. "Did" rather than "will" events: the
+  // reported height is final once the keyboard has finished animating, and a toast that lands in
+  // the right place a moment later beats one that lands in the wrong place immediately.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   const onTabBarLayout = (e: LayoutChangeEvent) => setTabBarHeight(e.nativeEvent.layout.height);
   const onFabLayout = (e: LayoutChangeEvent) => setFabHeight(e.nativeEvent.layout.height);
 
   const hideTabBar = isAuthScreen(pathname);
   const showFab = cartTotals.cartHasItems && isMiniCartScreen(pathname);
   const fabBottomOffset = tabBarHeight + (isProductDetailScreen(pathname) ? PRODUCT_ADD_BAR_HEIGHT : 0) + FAB_GAP;
+  // With the keyboard up, the toast has to clear it or it's simply not there as far as the customer
+  // is concerned - which is exactly what happened on the auth screens, where every message
+  // ("Enter a valid 10-digit mobile number", a wrong OTP) is raised while the keyboard is open. The
+  // keyboard's own height replaces the tab-bar/FAB stack entirely rather than adding to it: those
+  // are behind the keyboard anyway, so measuring from them would push the toast far too high.
+  //
   // With no tab bar to clear, a toast sits on the safe-area inset instead of the (now stale)
   // last-measured bar height - otherwise it floats in mid-air above nothing on the auth screens.
-  const toastBottomOffset = hideTabBar
-    ? insets.bottom + dsSpacing.md
-    // FAB_GAP is included here too: the toast stacks above the pill, so it has to move up by
-    // however far the pill did or it would sit on top of it.
-    : tabBarHeight + (showFab ? FAB_GAP + fabHeight + 20 : 12);
+  const toastBottomOffset = keyboardHeight
+    ? keyboardHeight + dsSpacing.xl
+    : hideTabBar
+      ? insets.bottom + dsSpacing.md
+      // FAB_GAP is included here too: the toast stacks above the pill, so it has to move up by
+      // however far the pill did or it would sit on top of it.
+      : tabBarHeight + (showFab ? FAB_GAP + fabHeight + 20 : 12);
   const goCart = () => router.push('/cart');
 
   return (
