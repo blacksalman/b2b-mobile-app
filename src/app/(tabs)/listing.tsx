@@ -114,12 +114,26 @@ export default function ListingScreen() {
   const goLogin = () => router.push('/account');
   const goBack = () => router.back();
 
+  // paddingTop below keeps the scroll content out from under the status bar. The hero used to run
+  // full-bleed to the very top, which meant the sticky block pinned underneath the clock - and a
+  // sticky element can't grow only while pinned, so no amount of padding on the block itself could
+  // fix that without permanently displacing the hero. Insetting the whole screen solves it once:
+  // the pinned block now stops at the status bar, and the band above it is the screen's own
+  // background.
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
+      {/* Index 1 is the stickyHeader block (search + filter + product count), directly after the
+          hero, so it pins to the top once you scroll past it - searching within a brand no longer
+          means scrolling back up or leaving for Home. Categories does this with a fixed top bar
+          outside its list; that isn't available here without displacing the hero, which is this
+          screen's whole identity, so it sticks in place instead. The index is safe: the hero and
+          that block are the first two children and neither is conditional. */}
+      <ScrollView contentContainerStyle={styles.scrollContent} stickyHeaderIndices={[1]}>
         <View style={[styles.hero, { backgroundColor: tint }]}>
           {heroImage && <Image source={{ uri: heroImage }} style={styles.heroImage} contentFit="cover" />}
-          <Pressable onPress={goBack} style={[styles.backButton, { top: insets.top + 12 }]}>
+          {/* Plain 12 now, not insets.top + 12: the screen itself carries the status-bar inset, so
+              the hero starts below it and this offset is measured from the hero's own top edge. */}
+          <Pressable onPress={goBack} style={[styles.backButton, { top: 12 }]}>
             <SmallBackChevronIcon size={9} color={ds.ink} />
           </Pressable>
           <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,.5)']} style={styles.heroScrim}>
@@ -128,25 +142,37 @@ export default function ListingScreen() {
           </LinearGradient>
         </View>
 
-        <View style={styles.searchRow}>
-          <View style={styles.searchInput}>
-            <SearchIcon size={17} color={ds.ink2} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder={`Search in ${title}…`}
-              placeholderTextColor={ds.ink2}
-              style={styles.input}
-            />
+        {/* Search, filter and the product count pin together as one block, so while you scroll the
+            grid you can still search, filter, and see how many products you're looking at. They have
+            to live inside a single View because stickyHeaderIndices pins one child, not a range. */}
+        <View style={styles.stickyHeader}>
+          <View style={styles.searchRow}>
+            <View style={styles.searchInput}>
+              <SearchIcon size={17} color={ds.ink2} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder={`Search in ${title}…`}
+                placeholderTextColor={ds.ink2}
+                style={styles.input}
+              />
+              {/* Same clear affordance Categories' search already has - without it, emptying a
+                  search here meant holding backspace through the whole term. */}
+              {!!query && (
+                <Pressable onPress={() => setQuery('')} style={styles.clearButton} hitSlop={8}>
+                  <CloseIcon size={10} color={ds.ink2} />
+                </Pressable>
+              )}
+            </View>
+            <Pressable onPress={() => setFilterOpen(true)} style={styles.filterButton}>
+              <FilterIcon size={17} color={ds.ink} />
+            </Pressable>
           </View>
-          <Pressable onPress={() => setFilterOpen(true)} style={styles.filterButton}>
-            <FilterIcon size={17} color={ds.ink} />
-          </Pressable>
-        </View>
 
-        <View style={styles.countRow}>
-          <Text style={styles.countTitle}>Products</Text>
-          <Text style={styles.countMeta}>{isReal && productsState.loading ? 'Loading…' : `${itemCount} items`}</Text>
+          <View style={styles.countRow}>
+            <Text style={styles.countTitle}>Products</Text>
+            <Text style={styles.countMeta}>{isReal && productsState.loading ? 'Loading…' : `${itemCount} items`}</Text>
+          </View>
         </View>
 
         {hasActiveFilters && !query && (
@@ -231,9 +257,20 @@ const styles = StyleSheet.create({
   heroScrim: { padding: dsSpacing.lg, paddingBottom: dsSpacing.lg },
   heroTitle: { fontFamily: dsFontFamily[700], fontSize: 22, lineHeight: 28, color: ds.surface, letterSpacing: -0.22 },
   heroTagline: { fontFamily: dsFontFamily[400], fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,.85)', marginTop: 4 },
+  // Wraps search + count so they pin as one block. backgroundColor is required, not cosmetic: a
+  // sticky block is drawn over the scrolling content, so a transparent one would have the product
+  // grid sliding visibly underneath it. Also carries a bottom padding so the grid doesn't run into
+  // the count row's baseline while pinned.
+  stickyHeader: { backgroundColor: ds.canvas, paddingBottom: dsSpacing.sm },
   searchRow: { flexDirection: 'row', gap: dsSpacing.sm, paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.lg },
+  // minWidth: 0 is what keeps the filter button on the same line. A flex item's min-width defaults
+  // to its content size, so this box - icon plus a placeholder as long as "Search in AyurVibes..." -
+  // refused to shrink past that and pushed the 44px filter button onto its own row. RN 0.86's Yoga
+  // follows the web spec here where the older one did not, which is why this only started after the
+  // SDK 57 upgrade. Categories' own search doesn't hit it because nothing sits beside it.
   searchInput: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: dsSpacing.sm,
@@ -244,7 +281,9 @@ const styles = StyleSheet.create({
     borderRadius: dsRadii.sheet,
     backgroundColor: ds.surface,
   },
-  input: { flex: 1, ...dsType.body, padding: 0 },
+  input: { flex: 1, minWidth: 0, ...dsType.body, padding: 0 },
+  // Matches Categories' own clear button exactly, so the two search fields behave and read alike.
+  clearButton: { flexShrink: 0, width: 20, height: 20, borderRadius: dsRadii.pill, backgroundColor: ds.line, alignItems: 'center', justifyContent: 'center' },
   filterButton: { flexShrink: 0, width: 44, height: 44, borderRadius: dsRadii.sheet, borderWidth: 1.4, borderColor: ds.line, alignItems: 'center', justifyContent: 'center' },
   countRow: { paddingHorizontal: dsSpacing.lg, paddingTop: dsSpacing.lg, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   countTitle: { ...dsType.h2 },
