@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -37,7 +37,12 @@ export default function CategoriesScreen() {
   // very first visit - the effect below re-syncs on every subsequent navigation too (including
   // back to no categoryId at all, e.g. a plain "Explore full catalogue" tap elsewhere, which
   // correctly resets to "All products" rather than leaving a stale selection behind).
-  const params = useLocalSearchParams<{ categoryId?: string }>();
+  //
+  // `nav` is a per-tap nonce set by whoever navigated here (Home's openCategory). It carries no
+  // meaning of its own - it exists so that arriving twice with the SAME categoryId still counts as
+  // two separate navigations, and re-applies the selection over whatever chip was chosen on this
+  // screen in between.
+  const params = useLocalSearchParams<{ categoryId?: string; nav?: string }>();
   const {
     cart,
     loggedIn,
@@ -61,7 +66,33 @@ export default function CategoriesScreen() {
 
   useEffect(() => {
     setCategoryId(params.categoryId ?? null);
-  }, [params.categoryId]);
+  }, [params.categoryId, params.nav]);
+
+  // Arriving here with a category already selected - a Home shelf tap, say - used to leave the
+  // active chip wherever it happened to sit in the rail, often off-screen to the right, so the
+  // screen looked unfiltered until you scrolled. Bring it to the front instead.
+  //
+  // Chip widths depend on the category name, so there's no index-based offset to compute: each
+  // chip reports its own x via onLayout and this scrolls to that.
+  const railRef = useRef<ScrollView>(null);
+  const chipX = useRef<Record<string, number>>({});
+
+  const scrollChipIntoView = useCallback((id: string | null) => {
+    // "All" is the first chip, so its position is simply the start of the rail.
+    if (!id) {
+      railRef.current?.scrollTo({ x: 0, animated: true });
+      return;
+    }
+    const x = chipX.current[id];
+    // Not laid out yet - the chip's own onLayout re-runs this once it knows where it is.
+    if (x === undefined) return;
+    // Less the rail's own left padding, so the chip sits at the edge rather than flush against it.
+    railRef.current?.scrollTo({ x: Math.max(0, x - dsSpacing.lg), animated: true });
+  }, []);
+
+  useEffect(() => {
+    scrollChipIntoView(categoryId);
+  }, [categoryId, scrollChipIntoView]);
 
   const realCategories = useProductCategories();
   const selectedCategory = categoryId ? realCategories.find((c) => c.id === categoryId) : undefined;
@@ -175,7 +206,13 @@ export default function CategoriesScreen() {
         </View>
 
         {!hasQuery && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rail} contentContainerStyle={styles.railContent}>
+          <ScrollView
+            ref={railRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.rail}
+            contentContainerStyle={styles.railContent}
+          >
             <Pressable
               onPress={() => setCategoryId(null)}
               style={[styles.railChip, categoryId === null ? styles.railChipActive : styles.railChipInactive]}
@@ -188,6 +225,13 @@ export default function CategoriesScreen() {
               <Pressable
                 key={c.id}
                 onPress={() => setCategoryId(c.id)}
+                onLayout={(e) => {
+                  chipX.current[c.id] = e.nativeEvent.layout.x;
+                  // Layout lands after the effect above has already run, so the selected chip
+                  // scrolls itself into view the moment it knows where it is. This is the path that
+                  // actually fires when arriving from a Home shelf tap.
+                  if (categoryId === c.id) scrollChipIntoView(c.id);
+                }}
                 style={[styles.railChip, categoryId === c.id ? styles.railChipActive : styles.railChipInactive]}
               >
                 <Text style={[styles.railChipText, categoryId === c.id ? styles.railChipTextActive : styles.railChipTextInactive]}>

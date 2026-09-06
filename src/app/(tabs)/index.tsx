@@ -110,7 +110,13 @@ export default function HomeScreen() {
   // Categories is a persistent tab screen, not a fresh page each time - passing categoryId as a
   // param (read by categories.tsx) is what lets it land pre-selected on that category instead of
   // always opening to "All products" regardless of which tile was tapped.
-  const openCategory = (categoryId: string) => router.push({ pathname: '/categories', params: { categoryId } });
+  //
+  // `nav` makes each tap a distinct navigation. Without it, tapping the same tile twice sends an
+  // identical categoryId both times, so categories.tsx's sync effect never re-runs - and if you had
+  // meanwhile picked a different chip over there, that stale choice survived and the tile appeared
+  // to open the wrong category. The value is only ever compared, never read.
+  const openCategory = (categoryId: string) =>
+    router.push({ pathname: '/categories', params: { categoryId, nav: String(Date.now()) } });
 
   // Brand cards get their own real path through Listing (collectionId param) - a brand can have
   // 40-160+ products, way past what's reasonable to pass as a comma-joined id list in a URL, and
