@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: ds.canvas },
   scrollContent: { paddingBottom: dsSpacing.xl },
   hero: { height: 220, position: 'relative', justifyContent: 'flex-end', overflow: 'hidden' },
-  heroImage: { ...StyleSheet.absoluteFillObject },
+  heroImage: { ...StyleSheet.absoluteFill },
   backButton: {
     position: 'absolute',
     left: dsSpacing.lg,
