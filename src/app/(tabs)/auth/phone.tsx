@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';
 import { ArrowRightIcon, CloseIcon } from '@/icons';
@@ -27,9 +27,21 @@ import { toE164 } from '@/lib/phoneFormat';
 export default function AuthPhoneScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { flash } = useAppState();
+  const { flash, loggedIn } = useAppState();
+  // Set by whatever gated itself behind login (Checkout's logged-out state). Carried through the
+  // flow and honoured on completion; absent for a plain "Log in" from Account.
+  const { next } = useLocalSearchParams<{ next?: string }>();
   const [authPhone, setAuthPhone] = useState('');
   const [sending, setSending] = useState(false);
+
+  // These auth screens live in the tab navigator and are never unmounted, so their state outlives
+  // the flow: after logging out, the previous session's number was still sitting in the field (and
+  // the previous OTP in otp.tsx). Clearing on a completed login rather than on focus keeps the
+  // still-logged-out flow intact - going back from OTP to change your number should not wipe what
+  // you typed.
+  useEffect(() => {
+    if (loggedIn) setAuthPhone('');
+  }, [loggedIn]);
   const scrollRef = useRef<ScrollView>(null);
   const { policies } = usePolicies();
   const [policyKey, setPolicyKey] = useState<string | null>(null);
@@ -49,7 +61,9 @@ export default function AuthPhoneScreen() {
     setSending(true);
     try {
       await sendOtp(toE164(authPhone));
-      router.push({ pathname: '/auth/otp', params: { phone: authPhone } });
+      // `next` is passed straight through, untouched, so whoever sent the customer into this flow
+      // gets them back afterwards. It's validated at the end of the flow, not here.
+      router.push({ pathname: '/auth/otp', params: { phone: authPhone, ...(next ? { next } : {}) } });
     } catch {
       flash('Could not send the code. Please try again.');
     } finally {

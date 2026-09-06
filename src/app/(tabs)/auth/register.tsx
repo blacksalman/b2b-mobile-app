@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { ArrowRightIcon, CheckThinIcon, SmallBackChevronIcon } from '@/icons';
 import { useAppState } from '@/state/AppStateContext';
 import { completeRegistration } from '@/lib/medusaAuth';
 import { toE164 } from '@/lib/phoneFormat';
+import { afterLoginTarget } from '@/lib/afterLogin';
 import { PolicySheet } from '@/components/shell/PolicySheet';
 import { usePolicies } from '@/data/account-content';
 
@@ -37,8 +38,8 @@ import { usePolicies } from '@/data/account-content';
 export default function AuthRegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { flash, login } = useAppState();
-  const { phone } = useLocalSearchParams<{ phone?: string }>();
+  const { flash, login, loggedIn } = useAppState();
+  const { phone, next } = useLocalSearchParams<{ phone?: string; next?: string }>();
   const { policies } = usePolicies();
   const [policyKey, setPolicyKey] = useState<string | null>(null);
   const policy = policyKey ? policies.find((p) => p.key === policyKey) ?? null : null;
@@ -48,6 +49,18 @@ export default function AuthRegisterScreen() {
   const [regEmail, setRegEmail] = useState('');
   const [regType, setRegType] = useState<(typeof REG_TYPES)[number]>(REG_TYPES[0]);
   const [submitting, setSubmitting] = useState(false);
+
+  // Same never-unmounted screen problem as phone.tsx and otp.tsx, but this one leaks personal
+  // details rather than just a phone number: without this, the previous registrant's name, business
+  // and email were still filled in for whoever signed up next on the same device.
+  useEffect(() => {
+    if (loggedIn) {
+      setRegName('');
+      setRegBusiness('');
+      setRegEmail('');
+      setRegType(REG_TYPES[0]);
+    }
+  }, [loggedIn]);
 
   const goAuthPhone = () => router.push('/auth/phone');
   const openPolicyTerms = () => setPolicyKey('terms');
@@ -84,7 +97,7 @@ export default function AuthRegisterScreen() {
       });
       login(customer);
       flash('Welcome to AyurvedaOne');
-      router.push('/account');
+      router.push(afterLoginTarget(next));
     } catch {
       flash('Could not complete registration. Please try again.');
     } finally {

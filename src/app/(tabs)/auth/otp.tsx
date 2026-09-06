@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { BrandLogo } from '@/components/shell/BrandLogo';
 import { useAppState } from '@/state/AppStateContext';
 import { sendOtp, verifyOtp, fetchCurrentCustomer } from '@/lib/medusaAuth';
 import { toE164 } from '@/lib/phoneFormat';
+import { afterLoginTarget } from '@/lib/afterLogin';
 
 // Built against the new AyurvedaOne design system (screen_AuthOtp.html, `isAuthOtp` block — fully in
 // range). Second step of the Auth flow.
@@ -33,10 +34,17 @@ import { toE164 } from '@/lib/phoneFormat';
 export default function AuthOtpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { flash, login } = useAppState();
-  const { phone } = useLocalSearchParams<{ phone?: string }>();
+  const { flash, login, loggedIn } = useAppState();
+  const { phone, next } = useLocalSearchParams<{ phone?: string; next?: string }>();
   const [otp, setOtp] = useState(['', '', '', '']);
   const [verifying, setVerifying] = useState(false);
+
+  // This screen is never unmounted (see phone.tsx's matching note), and the success path pushed to
+  // /account without clearing the digits - only the failure and resend paths did. So the code from
+  // the last session was still filled in the next time the screen was opened after a sign-out.
+  useEffect(() => {
+    if (loggedIn) setOtp(['', '', '', '']);
+  }, [loggedIn]);
   const inputRefs = useRef<(TextInput | null)[]>([]);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -60,7 +68,8 @@ export default function AuthOtpScreen() {
     try {
       const { isNewUser } = await verifyOtp(toE164(phone), code);
       if (isNewUser) {
-        router.push({ pathname: '/auth/register', params: { phone } });
+        // Registration still has to happen first, so `next` carries one screen further along.
+        router.push({ pathname: '/auth/register', params: { phone, ...(next ? { next } : {}) } });
         return;
       }
       const customer = await fetchCurrentCustomer();
@@ -70,7 +79,7 @@ export default function AuthOtpScreen() {
       }
       login(customer);
       flash(`Welcome back${customer.first_name ? ', ' + customer.first_name : ''}`);
-      router.push('/account');
+      router.push(afterLoginTarget(next));
     } catch {
       flash('Incorrect or expired code. Please try again.');
       setOtp(['', '', '', '']);

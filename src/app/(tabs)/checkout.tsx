@@ -345,7 +345,10 @@ export default function CheckoutScreen() {
         <View style={styles.centerState}>
           <Text style={styles.centerTitle}>Log in to check out</Text>
           <Text style={styles.centerBody}>Sign in to your trade account to place a real order.</Text>
-          <Pressable onPress={() => router.push('/auth/phone')} style={styles.centerButton}>
+          <Pressable
+            onPress={() => router.push({ pathname: '/auth/phone', params: { next: '/checkout' } })}
+            style={styles.centerButton}
+          >
             <Text style={styles.centerButtonText}>Log in</Text>
           </Pressable>
         </View>
