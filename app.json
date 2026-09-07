@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/ayurvedaone-app-icon.png",
     "scheme": "newappdesign",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "ios": {
       "icon": "./assets/expo.icon"
     },
@@ -17,9 +17,7 @@
         "foregroundImage": "./assets/images/ayurvedaone-app-icon.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "enableProguardInReleaseBuilds": true,
-      "enableShrinkResourcesInReleaseBuilds": true
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "static",
