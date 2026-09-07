@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Image } from 'expo-image';
+import { AppImage as Image } from '@/components/ds/AppImage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsType } from '@/theme';

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { DiagImage } from '@/components/debug/DiagImage';
+import { AppImage as Image } from '@/components/ds/AppImage';
 import { useRouter } from 'expo-router';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsElevation } from '@/theme';
 import { Header } from '@/components/shell/Header';
@@ -163,7 +163,7 @@ export default function HomeScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroRail}>
               {apiData.heroBanners.map((b) => (
                 <Pressable key={b.id} onPress={goCategories} style={[styles.heroImageCard, { width: bannerWidth }]}>
-                  <DiagImage source={{ uri: b.image_url as string }} style={styles.heroImage} contentFit="cover" />
+                  <Image source={{ uri: b.image_url as string }} style={styles.heroImage} contentFit="cover" />
                 </Pressable>
               ))}
             </ScrollView>
@@ -202,7 +202,7 @@ export default function HomeScreen() {
             <Pressable key={g.id} onPress={() => openCategory(g.id)} style={styles.prescriptionTile}>
               {g.imageUrl ? (
                 <View style={styles.prescriptionGlyphTile}>
-                  <DiagImage source={{ uri: g.imageUrl }} style={styles.prescriptionImage} contentFit="cover" />
+                  <Image source={{ uri: g.imageUrl }} style={styles.prescriptionImage} contentFit="cover" />
                 </View>
               ) : (
                 <View style={[styles.prescriptionGlyphTile, { backgroundColor: g.tint }]}>
@@ -242,7 +242,7 @@ export default function HomeScreen() {
                   <View key={p.id} style={styles.fastMovingRow}>
                     <Pressable onPress={() => openProduct(p)} style={styles.fastMovingPhoto}>
                       {p.thumbnail ? (
-                        <DiagImage source={{ uri: p.thumbnail }} style={styles.fastMovingImage} contentFit="cover" />
+                        <Image source={{ uri: p.thumbnail }} style={styles.fastMovingImage} contentFit="cover" />
                       ) : (
                         <Text style={styles.fastMovingPhotoLabel}>photo</Text>
                       )}
@@ -364,7 +364,7 @@ export default function HomeScreen() {
             <Pressable key={b.id} onPress={() => openBrandListing(b)} style={styles.brandCard}>
               <View style={styles.brandImage}>
                 {b.imageUrl ? (
-                  <DiagImage source={{ uri: b.imageUrl }} style={styles.brandRealImage} contentFit="cover" />
+                  <Image source={{ uri: b.imageUrl }} style={styles.brandRealImage} contentFit="cover" />
                 ) : (
                   <Text style={styles.brandImageLabel}>store photo</Text>
                 )}
@@ -472,7 +472,7 @@ export default function HomeScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.promoRail}>
               {apiData.promoBanners.map((pb) => (
                 <View key={pb.id as string} style={[styles.promoCard, { width: bannerWidth }]}>
-                  <DiagImage source={{ uri: pb.image_url as string }} style={styles.promoImage} contentFit="cover" />
+                  <Image source={{ uri: pb.image_url as string }} style={styles.promoImage} contentFit="cover" />
                 </View>
               ))}
             </ScrollView>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Image } from 'expo-image';
+import { AppImage as Image } from '@/components/ds/AppImage';
 import { ds, dsFontFamily, dsRadii, dsSpacing, dsElevation } from '@/theme';
 import { TrashIcon } from '@/icons';
 import type { CartLine } from '@/data/cartTotals';
