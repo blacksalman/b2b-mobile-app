@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ayurveda One",
     "slug": "NEW-APP-DESIGN",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/ayurvedaone-app-icon.png",
     "scheme": "newappdesign",
